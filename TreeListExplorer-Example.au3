@@ -1,6 +1,5 @@
 #include "TreeListExplorer.au3"
 #include <GuiTreeView.au3>
-#include "ToString.au3"
 
 Global $iWidth = 1600, $iHeight = 1000, $iSpace = 5
 
@@ -33,7 +32,7 @@ $iTop+=$iCtrlHeight+$iSpace
 Local $idListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight, $LVS_SHOWSELALWAYS)
 
 ; Create TLE system for the left side
-Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui)
+Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui, "", Default, Default, 0)
 If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system
 __TreeListExplorer_AddView($hTLESystemLeft, $idInputPathRight)
@@ -56,9 +55,7 @@ If @error Then ConsoleWrite("__TreeListExplorer_AddView $hListView failed: "&@er
 __TreeListExplorer_SetRoot($hTLESystemRight, "C:\Users")
 If @error Then ConsoleWrite("__TreeListExplorer_SetRoot failed: "&@error&":"&@extended&@crlf)
 ; Open the User profile on the right side
-; __TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir)
-__TreeListExplorer_OpenPath($hTLESystemRight, "C:\Users\Public\mod.io\4169\metadata\", "state.json")
-__TreeListExplorer_OpenPath($hTLESystemRight, "")
+__TreeListExplorer_OpenPath($hTLESystemRight, @DesktopDir)
 If @error Then ConsoleWrite("__TreeListExplorer_OpenPath failed: "&@error&":"&@extended&@crlf)
 
 Local $idButtonTest = GUICtrlCreateButton("Test", $iSpace, $iSpace)

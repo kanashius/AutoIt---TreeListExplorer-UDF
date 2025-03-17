@@ -15,7 +15,7 @@
 ; Language ......: English
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
-; Version .......: 2.8.2
+; Version .......: 2.9.0
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -48,12 +48,12 @@
 ; __TreeListExplorer__GetTimeString
 ; __TreeListExplorer__FileGetIconIndex
 ; __TreeListExplorer__ExpandTreeitem
-; __TreeListExplorer__LoadTreeItemContent
-; __TreeListExplorer__RemoveLastFolderFromPath
+; __TreeListExplorer__UpdateTreeItemContent
+; __TreeListExplorer__GetTreeViewItemDepth
+; __TreeListExplorer__UpdateTreeItemExpandable
 ; __TreeListExplorer__GetDrives
 ; __TreeListExplorer__UpdateTreeViewSelection
 ; __TreeListExplorer__TreeViewGetRelPath
-; __TreeListExplorer__TreeViewItemIsExpanded
 ; __TreeListExplorer__IsViewUpdating
 ; __TreeListExplorer__SetViewUpdating
 ; __TreeListExplorer__PathIsFolder
@@ -104,8 +104,8 @@ Global $__TreeListExplorer__Data[]
 ; Example .......: No
 ; ===============================================================================================================================
 Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize = 16)
-	Local $arLangData = [["Filename", "Size", "Date created"], _
-						 ["Dateiname", "Größe", "Erstelldatum"]]
+	Local $arLangData = [["Filename", "Size", "Date created", "This PC"], _
+						 ["Dateiname", "Größe", "Erstelldatum", "Dieser PC"]]
 
 	If $iLang<0 Or $iLang>UBound($arLangData)-1 Then Return SetError(1, 0, False)
 	Local $hImageList = _GUIImageList_Create($iIconSize, $iIconSize, 5, 1)
@@ -118,6 +118,8 @@ Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 11) ; CDROM-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 12) ; Networkdrive-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 53) ; Unknown-Icon
+	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 15) ; This PC
+	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 109) ; Dummy element (Crossed O)
 	$__TreeListExplorer__Data.hIconList = $hImageList
 	$__TreeListExplorer__Data.iIconIndex = _GUIImageList_GetImageCount($hImageList) ; next index, if an icon is added
 	Local $mIcons[]
@@ -167,12 +169,13 @@ EndFunc
 ; Name ..........: __TreeListExplorer_CreateSystem
 ; Description ...: Create a new TLE System. This is used to manage the views by settings the root folder, the current folder,...
 ;                  Multiple views (TreeView/ListView) can be added, all managed by this system.
-; Syntax ........: __TreeListExplorer_CreateSystem($hGui[, $sRootFolder = ""[, $sCallbackFolder = Default[, $sCallbackSelect = Default
-;                  [, $iLineNumber = @ScriptLineNumber]]]])
+; Syntax ........: __TreeListExplorer_CreateSystem($hGui[, $sRootFolder = ""[, $sCallbackFolder = Default[, $sCallbackSelect = Default[, $iMaxDepth = Default
+;                  [, $iLineNumber = @ScriptLineNumber]]]]])
 ; Parameters ....: $hGui                - the window handle for all views used by this system.
 ;                  $sRootFolder         - [optional] the root folder as string. Default is "", making the drive overview the root
 ;                  $sCallbackFolder     - [optional] callback function as string. Using Default will not call any function.
 ;                  $sCallbackSelect     - [optional] callback function as string. Using Default will not call any function.
+;                  $iMaxDepth           - [optional] the max depth, to which TreeViews are limited. Default = No limit.
 ;                  $iLineNumber         - [optional] linenumber of the function call. Default is @ScriptLineNumber.
 ;                                         (Automatic, no need to change; only used for error messages)
 ; Return values .: The system handle $hSystem, used by the other functions
@@ -185,6 +188,8 @@ EndFunc
 ;                  message will be written to the console at runtime (using $iLineNumber to find it better).
 ;                  $sCallbackSelect must be a function with 4 parameters ($hSystem, $sRoot, $sFolder, $sSelected)
 ;                  and is called, when an item in the Tree-/ListView is selected (Mouse/Keyboard)
+;                  If $iMaxDepth is set, it is not possible to go deeper then that depth (Example: Drive selection with $sRoot="" and $iMaxDepth=0).
+;                  ListViews are not limited by $iMaxDepth.
 ;
 ;                  Errors:
 ;                  1 - Parameter is invalid (@extended 1 - $hGui, 3 - $sCallbackFolder, 4 - $sCallbackSelect, 5 - $iLineNumber)
@@ -196,7 +201,7 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = "", $sCallbackFolder = Default, $sCallbackSelect = Default, $iLineNumber = @ScriptLineNumber)
+Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = "", $sCallbackFolder = Default, $sCallbackSelect = Default, $iMaxDepth = Default, $iLineNumber = @ScriptLineNumber)
 	If Not IsHWnd($hGui) Then Return SetError(1, 1, -1)
 	If $sCallbackFolder <> Default And Not IsFunc(Execute($sCallbackFolder)) Then Return SetError(1, 3, -1)
 	If $sCallbackSelect <> Default And Not IsFunc(Execute($sCallbackSelect)) Then Return SetError(1, 4, -1)
@@ -211,6 +216,7 @@ Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = "", $sCallbackFolder 
 	$mSystem.sSelectedOld = -1
 	$mSystem.bReloadFolder = False
 	$mSystem.bReloadAllFolders = False
+	$mSystem.iMaxDepth = $iMaxDepth
 	$mSystem.hGui = $hGui
 	$mSystem.sCallbackFolder = $sCallbackFolder
 	$mSystem.sCallbackSelect = $sCallbackSelect
@@ -802,36 +808,8 @@ Func __TreeListExplorer__UpdateView($hView)
 			_GUICtrlListView_BeginUpdate($hView)
 	EndSwitch
 	Local $bReload = False
-
-
-	; Check if the path was extended, before reloading
-	Switch $mView.iType
-		Case $__TreeListExplorer__Type_TreeView
-			Local $bExpandLast = False
-			If $mSystem.bReloadAllFolders Then ; check if the folder to be opened was expanded
-				Local $sPath = $mSystem.sFolder
-				Local $arRes = __TreeListExplorer__GetPathAndLast($mSystem.sRoot)
-				If $arRes[1]<>"" Then
-					$sPath = $arRes[1]&"\"&$sPath
-				EndIf
-				Local $arPath = StringSplit($sPath, "\", BitOR(1, 2))
-				Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
-				For $i=0 To UBound($arPath)-2 Step 1 ; last is empty
-					While _GUICtrlTreeView_GetText($hView, $hItem)<>$arPath[$i]
-						$hItem = _GUICtrlTreeView_GetNextSibling($hView, $hItem)
-						If $hItem = 0 Then ExitLoop 2
-					WEnd
-					If $i=UBound($arPath)-2 And _GUICtrlTreeView_GetExpanded($hView, $hItem) Then
-						$bExpandLast = True
-						ExitLoop
-					EndIf
-					$hItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
-				Next
-			EndIf
-	EndSwitch
-
 	; Root different
-	If $mView.sRoot<>$mSystem.sRoot Or $mSystem.bReloadAllFolders Or ($mView.sRoot="" And $mSystem.sFolder="" And $mSystem.bReloadFolder) Then
+	If $mView.sRoot<>$mSystem.sRoot Then ; HANDLE LATER: $mSystem.bReloadAllFolders Or ($mView.sRoot="" And $mSystem.sFolder="" And $mSystem.bReloadFolder)
 		If $mView.iType<>$__TreeListExplorer__Type_Input Then
 			__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sRoot, True)
 			If $mSystem.sRoot <> $mSystem.sRootOld Then
@@ -841,26 +819,17 @@ Func __TreeListExplorer__UpdateView($hView)
 			$__TreeListExplorer__Data["mViews"][$hView]["sRoot"] = $mSystem.sRoot
 			Switch $mView.iType
 				Case $__TreeListExplorer__Type_TreeView
-					__TreeListExplorer__SetViewUpdating($hView, True, $__TreeListExplorer__Status_UpdateView)
 					_GUICtrlTreeView_DeleteAll($hView)
-					If $mSystem.sRoot = "" Then
-						Local $arDrives = __TreeListExplorer__GetDrives()
-						For $i=0 To UBound($arDrives)-1 Step 1
-							Local $hRoot =  _GUICtrlTreeView_Add($hView, 0, StringUpper($arDrives[$i][0]), $arDrives[$i][1], $arDrives[$i][1])
-							__TreeListExplorer__LoadTreeItemContent($hView, $hRoot)
-						Next
+					Local $hRoot
+					If $mSystem.sRoot="" Then
+						$hRoot = _GUICtrlTreeView_Add($hView, 0, $__TreeListExplorer__Data.arLangData[$__TreeListExplorer__Data.iLang][3], 9, 9) ; maybe remove text here
 					Else
-						Local $arFolder = StringRegExp($mSystem.sRoot, "([^\\]*)\\$", 1) ; get the last folder/drive name
-						If UBound($arFolder)>0 Then ; Should always be true
-							Local $hRoot = _GUICtrlTreeView_Add($hView, 0, $arFolder[0], 0, 0)
-							__TreeListExplorer__LoadTreeItemContent($hView, $hRoot)
-						EndIf
+						Local $arPath = __TreeListExplorer__GetPathAndLast($mSystem.sRoot)
+						$hRoot = _GUICtrlTreeView_Add($hView, 0, $arPath[1], 0, 0)
 					EndIf
-					__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_UpdateView)
-					$bReload = True
+					_GUICtrlTreeView_AddChild($hView, $hRoot, "HasChilds", 10, 10)
+					__TreeListExplorer__ExpandTreeitem($hView, $hRoot)
 				Case $__TreeListExplorer__Type_ListView
-					 ; (edge case) do not display ".." at root folder => remove if its there and its not fixed in the "folder different" code below (Cannot be a normal folder, because ".." is not allowed as folder name in windows)
-					If $mView.sFolder=$mSystem.sFolder And $mSystem.sFolder="" And _GUICtrlListView_GetItemCount($hView)>0 And _GUICtrlListView_GetItemText($hView, 0, 1)=".." Then _GUICtrlListView_DeleteItem($hView, 0)
 					$bReload = True
 			EndSwitch
 			__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sRoot, False)
@@ -876,78 +845,53 @@ Func __TreeListExplorer__UpdateView($hView)
 		__TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect")
 	EndIf
 	If $mView.sFolder <> $mSystem.sFolder Or $mView.sSelected<>$mSystem.sSelected Or $mSystem.bReloadFolder Or $bReload Then
-		Local $bDoReload = $mSystem.bReloadFolder Or $bReload
 		Local $bFolderChanged = $mView.sFolder <> $mSystem.sFolder
-		Local $bUpdateFolder = $bFolderChanged Or $bDoReload
+		Local $bUpdateFolder = $bFolderChanged Or $mSystem.bReloadFolder Or $bReload
 		$__TreeListExplorer__Data["mViews"][$hView]["sFolder"] = $mSystem.sFolder
 		$__TreeListExplorer__Data["mViews"][$hView]["sSelected"] = $mSystem.sSelected
 		Switch $mView.iType
 			Case $__TreeListExplorer__Type_TreeView
-				Local $sFolder = $mSystem.sFolder & $mSystem.sSelected
-				Local $arFolders = StringSplit($sFolder, "\", BitOR(1, 2))
-				Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
 				__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, True)
-				If $mSystem.sRoot <> "" Then ; Root item is not part of $mSystem.sFolder
-					If $mSystem.sFolder<>"" Then ; expand the root item
-						__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
-					Else
-						__TreeListExplorer__ExpandTreeitem($hView, $hItem, $bDoReload)
-					EndIf
+				Local $sPath = $mSystem.sFolder
+				Local $arPath = StringSplit($sPath, "\", BitOR(1, 2))
+				Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
+				Local $iMaxIndex = UBound($arPath)-2
+				; expand path and select last folder (if nothing in that folder is selected)
+				For $i=0 To $iMaxIndex Step 1 ; last is empty
 					$hItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
-				EndIf
-				; expand all items on the path below the current one
-				For $i=0 To UBound($arFolders)-3 Step 1 ; last field is always empty, second to last is handled below (only selected)
-					While _GUICtrlTreeView_GetText($hView, $hItem)<>$arFolders[$i]
+					If $hItem = 0 Then ExitLoop
+					While _GUICtrlTreeView_GetText($hView, $hItem)<>$arPath[$i]
 						$hItem = _GUICtrlTreeView_GetNextSibling($hView, $hItem)
-						If $hItem=0 Then ExitLoop 2
+						If $hItem = 0 Then ExitLoop 2
 					WEnd
-					If $hItem<>0 Then
-						If $i<>UBound($arFolders)-3 Then
-							__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
-							$hItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
+					If $i<>$iMaxIndex Then
+						__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
+					Else ; handle last item
+						If $mSystem.sSelected="" Then
+							If $mSystem.bReloadFolder Then __TreeListExplorer__UpdateTreeItemContent($hView, $hItem)
+							_GUICtrlTreeView_EnsureVisible($hView, $hItem)
+							_GUICtrlTreeView_SelectItem($hView, $hItem)
+							__TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect", $arPath[$i])
 						Else
-							__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
+							__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadFolder)
 						EndIf
+						ExitLoop
 					EndIf
 				Next
-				; select the current item (or selected item if applicable)
-				If UBound($arFolders)>=1 Then
-					Local $sSelected = $arFolders[UBound($arFolders)-1] ; selection changed
-					If UBound($arFolders)>=2 Then $sSelected = $arFolders[UBound($arFolders)-2] ; folder changed = last folder should be selected
-					If $sSelected<>"" Then
-						Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
-						If UBound($arFolders)<=2 Then $hChild = $hItem ; handle root items
-						While $hChild<>0 ; search and select the item if possible
-							If _GUICtrlTreeView_GetText($hView, $hChild)=$sSelected Then
-								; ensure reloading of the folder, if it is expanded and expanding if it is reloaded and was expanded before
-								If _GUICtrlTreeView_GetExpanded($hView, $hChild) Or $bExpandLast Or ($bFolderChanged And $mSystem.sSelected<>"") Then
-									__TreeListExplorer__ExpandTreeitem($hView, $hChild, $bDoReload)
-								EndIf
-								; select the item of the selected file/folder, if the opened folder is expanded
-								If _GUICtrlTreeView_GetExpanded($hView, $hChild) And $arFolders[UBound($arFolders)-1]<>"" Then ; enable folder/file selection, if folder is expanded
-									$sSelected = $arFolders[UBound($arFolders)-1]
-									$hChild = _GUICtrlTreeView_GetFirstChild($hView, $hChild)
-									ContinueLoop
-								Else ; otherwise select the opened folder
-									_GUICtrlTreeView_EnsureVisible($hView, $hChild)
-									_GUICtrlTreeView_SelectItem($hView, $hChild)
-									ExitLoop
-								EndIf
-							EndIf
-							$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
-						WEnd
-						If $sSelected<>"" Then __TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect", $sSelected)
-					EndIf
-				Else ; handle root item selection
-					Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
-					If _GUICtrlTreeView_GetNextSibling($hView, $hItem)=0 Then
-						_GUICtrlTreeView_EnsureVisible($hView, $hItem)
-						_GUICtrlTreeView_SelectItem($hView, $hItem)
-						If _GUICtrlTreeView_GetExpanded($hView, $hItem) Then __TreeListExplorer__ExpandTreeitem($hView, $hItem, $bDoReload)
-					Else
-						Local $hItem = _GUICtrlTreeView_GetSelection($hView)
-						If $hItem<>0 Then  _GUICtrlTreeView_SetSelected($hView, $hItem, False)
-					EndIf
+				; Select the item
+				If $hItem<>0 And $mSystem.sSelected<>"" Then
+					Local $sSelected = $mSystem.sSelected
+					Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
+					While $hChild<>0 ; search and select the item if possible
+						If _GUICtrlTreeView_GetText($hView, $hChild)=$sSelected Then
+							_GUICtrlTreeView_EnsureVisible($hView, $hChild)
+							_GUICtrlTreeView_SelectItem($hView, $hChild)
+							__TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect")
+							ExitLoop
+						EndIf
+						$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
+					WEnd
+				ElseIf $hItem=_GUICtrlTreeView_GetFirstItem($hView) Then
 					__TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect")
 				EndIf
 				__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, False)
@@ -1117,51 +1061,22 @@ EndFunc
 ; Example .......: No
 ; ===============================================================================================================================
 Func __TreeListExplorer__ExpandTreeitem($hView, $hItem, $bReload = False)
-	If __TreeListExplorer__TreeViewItemIsExpanded($hView, $hItem) And Not $bReload Then Return True
+	If _GUICtrlTreeView_GetExpanded($hView, $hItem) And Not $bReload Then Return True
 	__TreeListExplorer__SetViewUpdating($hView, True, $__TreeListExplorer__Status_ExpandTree)
-	__TreeListExplorer__LoadTreeItemContent($hView, $hItem)
-	; DO NOT USE _GUICtrlTreeView_Expand IT EXPANDS ALL CHILDREN
 	_SendMessage($hView, $TVM_EXPAND, $TVE_EXPAND, $hItem, 0, "wparam", "handle")
-	Local $mView = $__TreeListExplorer__Data.mViews[$hView]
-	Local $sRoot = __TreeListExplorer__GetCurrentRoot($mView.iSystem)
-	Local $hChildItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
-	While $hChildItem<>0
-		Local $sChildPath = $sRoot & __TreeListExplorer__TreeViewGetRelPath($mView.iSystem, $hView, $hChildItem)
-		If __TreeListExplorer__PathIsFolder($sChildPath) Then
-			If $mView.bShowFiles Then
-				Local $hSearch = FileFindFirstFile($sChildPath & "\" & "*")
-				If $hSearch<>-1 Then
-					FileClose($hSearch)
-					_GUICtrlTreeView_AddChild($hView, $hChildItem, "HasChilds")
-				EndIf
-			Else
-				Local $hSearch = FileFindFirstFile($sChildPath & "\" & "*")
-				If $hSearch<>-1 Then
-					While True
-						FileFindNextFile($hSearch)
-						If @error Then ExitLoop
-						If @extended=1 Then
-							_GUICtrlTreeView_AddChild($hView, $hChildItem, "HasChilds")
-							ExitLoop
-						EndIf
-					WEnd
-					FileClose($hSearch)
-				EndIf
-			EndIf
-		EndIf
-		$hChildItem=_GUICtrlTreeView_GetNextChild($hView, $hChildItem)
-	WEnd
+	__TreeListExplorer__UpdateTreeItemContent($hView, $hItem)
 	__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_ExpandTree)
 	Return True
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
-; Name ..........: __TreeListExplorer__LoadTreeItemContent
-; Description ...: Load the children of the TreeView item.
-; Syntax ........: __TreeListExplorer__LoadTreeItemContent($hView, $hItem)
-; Parameters ....: $hView               - the TreeView handle.
-;                  $hItem               - the item handle.
-; Return values .: True on success
+; Name ..........: __TreeListExplorer__UpdateTreeItemContent
+; Description ...: Load or update the content of a treeview item to fill it with files/folders/drives
+; Syntax ........: __TreeListExplorer__UpdateTreeItemContent($hView, $hItem[, $bRecursive = False])
+; Parameters ....: $hView               - a treeview handle.
+;                  $hItem               - a item to update.
+;                  $bRecursive          - [optional] True if it is called recursive. Default is False.
+; Return values .: True on success.
 ; Author ........: Kanashius
 ; Modified ......:
 ; Remarks .......:
@@ -1169,36 +1084,108 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer__LoadTreeItemContent($hView, $hItem)
+Func __TreeListExplorer__UpdateTreeItemContent($hView, $hItem, $bRecursive = False)
 	Local $mView = $__TreeListExplorer__Data.mViews[$hView]
-	__TreeListExplorer__SetViewUpdating($hView, True, $__TreeListExplorer__Status_LoadTree)
 	Local $mSystem = $__TreeListExplorer__Data.mSystems[$mView.iSystem]
-	Local $sRoot = __TreeListExplorer__RemoveLastFolderFromPath($mSystem.sRoot)
-	Local $sPath = $sRoot & StringReplace(_GUICtrlTreeView_GetTree($hView, $hItem), "|", "\") & "\"
-	_GUICtrlTreeView_DeleteChildren($hView, $hItem)
-	If $mView.bShowFolders Then
-		Local $arFolders = _FileListToArray($sPath, "*", 2)
+	Local $bExpand = True
+	If $mSystem.iMaxDepth<>Default Then
+		If __TreeListExplorer__GetTreeViewItemDepth($hView, $hItem)>=$mSystem.iMaxDepth Then Return False
+		$bExpand = Not (__TreeListExplorer__GetTreeViewItemDepth($hView, $hItem)+1>=$mSystem.iMaxDepth)
+	EndIf
+
+	If Not $bRecursive Then __TreeListExplorer__SetViewUpdating($hView, True, $__TreeListExplorer__Status_LoadTree)
+	; get absolute path for item
+	Local $arPath = StringRegExp(StringReplace(_GUICtrlTreeView_GetTree($hView, $hItem), "|", "\"), "[^\\]*\\?(.*)$", 1) ; remove first element (root)
+	If @error Or UBound($arPath)<>1 Then Return False
+	Local $sPath = $mSystem.sRoot & $arPath[0]
+	; Get Content data (drives/folders/files)
+	Local $arEntries[0][2]
+	If $sPath = "" Then ; handle root => show drives
+		$arEntries = __TreeListExplorer__GetDrives()
+	Else ; handle any other folder
+		Local $arFolders[0]
+		Local $arFiles[0]
+		If $mView.bShowFolders Then $arFolders = _FileListToArray($sPath, "*", 2)
+		If $mView.bShowFiles Then $arFiles = _FileListToArray($sPath, "*", 1)
+		Local $iSize = UBound($arFolders) + UBound($arFiles) - (UBound($arFolders)>0?1:0) - (UBound($arFiles)>0?1:0)
+		ReDim $arEntries[$iSize][2]
 		For $i=1 To UBound($arFolders)-1 Step 1
-			_GUICtrlTreeView_AddChild($hView, $hItem, $arFolders[$i], 0, 0)
+			$arEntries[$i-1][0] = $arFolders[$i]
+			$arEntries[$i-1][1] = 0
 		Next
-	EndIf
-	If $mView.bShowFiles Then
-		Local $arFiles = _FileListToArray($sPath, "*", 1)
+		Local $iIndex = UBound($arFolders)-1-(UBound($arFolders)>0?1:0)
 		For $i=1 To UBound($arFiles)-1 Step 1
-			Local $iIconIndex = __TreeListExplorer__FileGetIconIndex($sPath & "\" & $arFiles[$i])
-			_GUICtrlTreeView_AddChild($hView, $hItem, $arFiles[$i], $iIconIndex, $iIconIndex)
+			$arEntries[$iIndex+$i][0] = $arFiles[$i]
+			$arEntries[$iIndex+$i][1] = __TreeListExplorer__FileGetIconIndex($sPath & "\" & $arFiles[$i])
 		Next
 	EndIf
-	__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_LoadTree)
+	; add/insert new items and update existing ones
+	Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem), $hChildBefore = 0
+	Local $sPathPrefix = $sPath & "\"
+	If $sPath="" Then $sPathPrefix = ""
+	; delete
+	Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem), $iStart = 0
+	; remove dummy item, if it is there
+	If _GUICtrlTreeView_GetImageIndex($hView, $hChild) = 10 And _GUICtrlTreeView_GetText($hView, $hChild)="HasChilds" Then
+		Local $hBefore = $hChild
+		$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
+		_GUICtrlTreeView_Delete($hView, $hBefore)
+	EndIf
+	; remove deleted items
+	While $hChild<>0
+		Local $bFound = False
+		For $i=$iStart To UBound($arEntries)-1 Step 1
+			If _GUICtrlTreeView_GetText($hView, $hChild)=$arEntries[$i][0] And _GUICtrlTreeView_GetImageIndex($hView, $hChild)=$arEntries[$i][1] Then
+				$iStart = $i+1 ; skip all entries already found
+				$bFound = True
+				ExitLoop
+			EndIf
+		Next
+		Local $hBefore = $hChild
+		$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
+		If Not $bFound Then _GUICtrlTreeView_Delete($hView, $hBefore)
+	WEnd
+	; add/insert/update
+	Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
+	For $i=0 To UBound($arEntries)-1 Step 1
+		Local $sChildPath = $sPathPrefix & $arEntries[$i][0]
+		If $hChild=0 Then
+			Local $hNew = _GUICtrlTreeView_AddChild($hView, $hItem, $arEntries[$i][0], $arEntries[$i][1], $arEntries[$i][1])
+			$hChildBefore = $hNew
+			If $bExpand Then __TreeListExplorer__UpdateTreeItemExpandable($hView, $hNew, $sChildPath, $mView.bShowFiles)
+		Else
+			If _GUICtrlTreeView_GetText($hView, $hChild)<>$arEntries[$i][0] Or _GUICtrlTreeView_GetImageIndex($hView, $hChild)<>$arEntries[$i][1] Then
+				Local $hNew
+				If $hChildBefore = 0 Then
+					$hNew = _GUICtrlTreeView_AddChildFirst($hView, $hItem, $arEntries[$i][0], $arEntries[$i][1], $arEntries[$i][1])
+				Else
+					$hNew = _GUICtrlTreeView_InsertItem($hView, $arEntries[$i][0], $hItem, $hChildBefore, $arEntries[$i][1], $arEntries[$i][1])
+				EndIf
+				$hChildBefore = $hNew
+				If $bExpand Then __TreeListExplorer__UpdateTreeItemExpandable($hView, $hNew, $sChildPath, $mView.bShowFiles)
+			Else
+				$hChildBefore = $hChild
+				If _GUICtrlTreeView_GetExpanded($hView, $hChild) Then
+					__TreeListExplorer__UpdateTreeItemContent($hView, $hChild, True) ; if child is expanded, update content
+				Else ; if not, check if should still be expandable
+					_GUICtrlTreeView_DeleteChildren($hView, $hChild)
+					If $bExpand Then __TreeListExplorer__UpdateTreeItemExpandable($hView, $hChild, $sChildPath, $mView.bShowFiles)
+				EndIf
+				$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
+			EndIf
+		EndIf
+	Next
+	If Not $bRecursive Then __TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_LoadTree)
 	Return True
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
-; Name ..........: __TreeListExplorer__RemoveLastFolderFromPath
-; Description ...: Get the path without the last folder, e.g. C:\Users\User\ => C:\Users\
-; Syntax ........: __TreeListExplorer__RemoveLastFolderFromPath($sPath)
-; Parameters ....: $sPath               - the path to change.
-; Return values .: The shortened path
+; Name ..........: __TreeListExplorer__GetTreeViewItemDepth
+; Description ...: Get the depth of a TreeView item
+; Syntax ........: __TreeListExplorer__GetTreeViewItemDepth($hView, $hItem)
+; Parameters ....: $hView               - the treeview handle.
+;                  $hItem               - the item handle.
+; Return values .: The depth
 ; Author ........: Kanashius
 ; Modified ......:
 ; Remarks .......:
@@ -1206,10 +1193,54 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer__RemoveLastFolderFromPath($sPath)
-	Local $arFolder = StringRegExp($sPath, "^(.*?\\?)[^\\]*\\$", 1) ; remove last folder (it is already as root in the treeview)
-	If Not @error And UBound($arFolder)>0 Then Return $arFolder[0]
-	Return ""
+Func __TreeListExplorer__GetTreeViewItemDepth($hView, $hItem)
+	Local $iDepth = 0
+	Local $hParent = _GUICtrlTreeView_GetParentHandle($hView, $hItem)
+	While $hParent<>0
+		$hParent = _GUICtrlTreeView_GetParentHandle($hView, $hParent)
+		$iDepth += 1
+	WEnd
+	Return $iDepth - 1 ; root item does not count
+EndFunc
+
+; #INTERNAL_USE_ONLY# ===========================================================================================================
+; Name ..........: __TreeListExplorer__UpdateTreeItemExpandable
+; Description ...: Check if a TreeView item will have child elements. If yes, then add a dummy element to make it expandable
+; Syntax ........: __TreeListExplorer__UpdateTreeItemExpandable($hView, $hItem, $sPath, $bShowFiles)
+; Parameters ....: $hView               - the treeview handle.
+;                  $hItem               - the item handle.
+;                  $sPath               - the path to check.
+;                  $bShowFiles          - True if files allow the item to be expanded.
+; Return values .: True on success.
+; Author ........: Kanashius
+; Modified ......:
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: No
+; ===============================================================================================================================
+Func __TreeListExplorer__UpdateTreeItemExpandable($hView, $hItem, $sPath, $bShowFiles)
+	If $bShowFiles Then
+		Local $hSearch = FileFindFirstFile($sPath & "\" & "*")
+		If $hSearch<>-1 Then
+			FileClose($hSearch)
+			_GUICtrlTreeView_AddChild($hView, $hItem, "HasChilds", 10, 10)
+		EndIf
+	Else
+		Local $hSearch = FileFindFirstFile($sPath & "\" & "*")
+		If $hSearch<>-1 Then
+			While True
+				FileFindNextFile($hSearch)
+				If @error Then ExitLoop
+				If @extended=1 Then
+					_GUICtrlTreeView_AddChild($hView, $hItem, "HasChilds", 10, 10)
+					ExitLoop
+				EndIf
+			WEnd
+			FileClose($hSearch)
+		EndIf
+	EndIf
+	Return True
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
@@ -1229,7 +1260,7 @@ Func __TreeListExplorer__GetDrives()
 	Local $arDrives = DriveGetDrive('ALL'), $iType
 	Local $arResult[UBound($arDrives)-1][2]
 	For $i = 1 To UBound($arDrives)-1
-		$arResult[$i-1][0] = $arDrives[$i]
+		$arResult[$i-1][0] = StringUpper($arDrives[$i])
 		Switch DriveGetType($arDrives[$i])
 			Case 'Fixed'
 				$arResult[$i-1][1] = 5
@@ -1239,7 +1270,7 @@ Func __TreeListExplorer__GetDrives()
 				$arResult[$i-1][1] = 7
 			Case 'Removable'
 				$arResult[$i-1][1] = 4
-				If StringLower(StringLeft($arDrives[$i], 2)) = "a:" Or StringLower(StringLeft($arDrives[$i], 2)) = "b:" Then $arResult[$i-1][1] = 3
+				If StringLeft($arDrives[$i], 2) = "A:" Or StringLeft($arDrives[$i], 2) = "B:" Then $arResult[$i-1][1] = 3
 			Case Else
 				$arResult[$i-1][1] = 8
 		EndSwitch
@@ -1266,7 +1297,7 @@ Func __TreeListExplorer__UpdateTreeViewSelection($hView, $hItem)
 		Local $iSystem = $__TreeListExplorer__Data.mViews[$hView].iSystem
 		Local $sPath = __TreeListExplorer__TreeViewGetRelPath($iSystem, $hView, $hItem)
 		If __TreeListExplorer__RelPathIsFolder($iSystem, $sPath) Then
-			If Not __TreeListExplorer__TreeViewItemIsExpanded($hView, $hItem) Or Not __TreeListExplorer__IsPathOpen($iSystem, $sPath) Then
+			If Not _GUICtrlTreeView_GetExpanded($hView, $hItem) Or Not __TreeListExplorer__IsPathOpen($iSystem, $sPath) Then
 				$__TreeListExplorer__Data["mSystems"][$iSystem]["bReloadFolder"] = True
 				__TreeListExplorer__OpenPath($iSystem, $sPath)
 				$__TreeListExplorer__Data["mSystems"][$iSystem]["bReloadFolder"] = False
@@ -1297,30 +1328,10 @@ EndFunc
 ; ===============================================================================================================================
 Func __TreeListExplorer__TreeViewGetRelPath($iSystem, $hView, $hItem)
 	Local $sPath = StringReplace(_GUICtrlTreeView_GetTree($hView, $hItem), "|", "\")
-	If $__TreeListExplorer__Data.mSystems[$iSystem].sRoot <> "" Then
-		$arPath = StringRegExp($sPath, "[^\\]*\\?(.*)$", 1) ; remove first element (root)
-		If UBound($arPath)>0 Then $sPath = $arPath[0]
-	EndIf
+	$arPath = StringRegExp($sPath, "[^\\]*\\?(.*)$", 1) ; remove first root element
+	If UBound($arPath)>0 Then $sPath = $arPath[0]
 	If $sPath<>"" And StringRight($sPath, 1)<>"\" And __TreeListExplorer__RelPathIsFolder($iSystem, $sPath) Then $sPath &= "\"
 	Return $sPath
-EndFunc
-
-; #INTERNAL_USE_ONLY# ===========================================================================================================
-; Name ..........: __TreeListExplorer__TreeViewItemIsExpanded
-; Description ...: Check if a TreeView item is expanded
-; Syntax ........: __TreeListExplorer__TreeViewItemIsExpanded($hView, $hItem)
-; Parameters ....: $hView               - the TreeView handle.
-;                  $hItem               - the item handle.
-; Return values .: True if expanded, False otherwise
-; Author ........: Kanashius
-; Modified ......:
-; Remarks .......:
-; Related .......:
-; Link ..........:
-; Example .......: No
-; ===============================================================================================================================
-Func __TreeListExplorer__TreeViewItemIsExpanded($hView, $hItem)
-	Return BitAND(_GUICtrlTreeView_GetState($hView, $hItem), $TVIS_EXPANDED)>0
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
@@ -1587,11 +1598,11 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 								$iIndex = 0
 								If _GUICtrlListView_GetItemCount($hView)>1 And _GUICtrlListView_GetItemText($hView, 0)=".." Then $iIndex = 1
 							EndIf
-							If $NM_CLICK Or $bKeyPressed Then
+							If $iCode=$NM_CLICK Or $bKeyPressed Then
 								If $iIndex<>-1 Then
 									Local $arPath = __TreeListExplorer__GetPathAndLast(__TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0))
 									__TreeListExplorer__OpenPath($iSystem, $arPath[0], $arPath[1])
-									__TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", "$sCallbackOnClick", $iIndex)
+									If $iCode=$NM_CLICK Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", "$sCallbackOnClick", $iIndex)
 								EndIf
 							EndIf
 							If $NM_CLICK Then Return 1 ; required, otherwise some events are sent, where the icon index is the event id => random GuiGetMsg events triggered
@@ -1625,10 +1636,8 @@ Func __TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
 	Local $iIndex = _GUICtrlListView_GetSelectionMark($hView)
 	If $iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, 0) = ".." Then
 		Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem)
-		If $sPath <> "" Then
-			$sPath = __TreeListExplorer__RemoveLastFolderFromPath($sPath)
-			__TreeListExplorer__OpenPath($iSystem, $sPath)
-		EndIf
+		Local $arPath = __TreeListExplorer__GetPathAndLast($sPath)
+		__TreeListExplorer__OpenPath($iSystem, $arPath[0])
 	ElseIf $iIndex<>-1 Then
 		Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0)
 		__TreeListExplorer__OpenPath($iSystem, $sPath)
