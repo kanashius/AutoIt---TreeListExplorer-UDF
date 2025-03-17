@@ -1,0 +1,55 @@
+Version 1.0.0 (Old Version)
+Version 2.0.0 (New Version after rework)
+Version 2.1.0
+- Rename $sCallbackOnSelect to $sCallbackOnClick
+- Add an additional callback $sCallbackOnSelectionChange, that is called whenever the Tree-/ListView item selection changes
+Version 2.2.0
+- Improve loading speed for TreeView folders when expanding
+Version 2.3.0
+- Fix some bugs where folders did not correctly expand/collapse when clicking them (when the root folder is not "" => shows all drives)
+- Fix some documentation
+- Add a method for reloading (__TreeListExplorer_Reload) the current folder (ListView/TreeView) or all folders (TreeView)
+- Remove the reload parameter from the __TreeListExplorer_OpenPath method (Replaced with __TreeListExplorer_Reload).
+- Other small internal changes
+Version 2.4.0
+- Add the possibility to handle file/folder selections better
+- Files/Folders keep selected when reloading
+- The currently selected File/Folder can be checked with __TreeListExplorer_GetSelected
+- File selection is synchronized between all Tree-/Listviews, Folder selection only between ListViews (TreeView folder selection changes the current folder and expands it)
+- fixed minor issues
+Version 2.5.0
+- Disabled TreeList expand with a single click and changed it to a double click
+- Selection is now synchronized for all files/folders between all views (Tree-/ListView)
+- The Selection callback is now moved from __TreeListExplorer_AddView to __TreeListExplorer_CreateSystem and only fires ones per change for the system and not for every view (as it was before)
+- All callbacks were changed to pass the selected folder and some additional information is now provided (clicked index/item, the loading path,...)
+- Small performance improvements
+- Some internal restructuring
+Version 2.5.1
+- Fixed: selection not working for drives
+Version 2.6.0
+- Added support for icons of all file extensions for TreeViews and ListViews.
+Version 2.7.0
+- Input controls are now possible as a view. They show the current folder and when pressing {ENTER} inside, the system tries to open the path show in the input.
+- Changed the behavior of the treeview when clicking items. They now change the current folder, but are not expanded. This changes the folder in the ListView, when clicking a folder in the TreeView.
+Version 2.7.1
+- Clicking on the Bitmap of a TreeView item is now registered as a click (not just the text like before)
+- Fixed a missing selection update when clicking on a TreeView item
+Version 2.7.2
+- Add parameter for setting the (file-/folder-)icon size on startup
+Version 2.8.0
+- TreeView selection is now triggering the select event and the $sSelect corresponds to the selected folder/file. NOTE: __TreeViewExplorer_GetSelected will be empty, if the selection is a folder in a treeview
+- Selection handling was improved, especially the synchronization between TreeView and ListView
+- Add keyboard navigation to the listview
+- Fixed a bug, where the icon index was sent as event (GuIGetMsg), when an item was clicked (happens without the udf message handling, so it needed a workaround: suppress the default autoit handler for mouseclicks)
+Version 2.8.1
+- Fixed a bug, where the select callback was sometimes not send correctly
+Version 2.9.0
+- Fixed bug for TreeViews, where folders were shown as expandable, when having only files but no folders, even if showing files was turned of
+- rework how treeviews are filled/updated/expanded (folders that are expanded will stay expanded on reload)
+- add the possibility to set a depth limit for the treeview (Example: Drive selection with $sRoot="" and $iMaxDepth=0)
+- Fixed bug for Arrow selection in the ListView to not trigger a click event anymore
+- When the open folder or the selection changed, the TreeView checks, if it still exists (=> treeview updates, if a folder was deleted)
+Version 2.9.1
+- Workaround for a Bug in the GuiTreeView UDF (until it is fixed), causing random control deletions instead of TreeView item deletions
+Version 2.9.2
+- Improved fileicon support. Should support pretty much any file.
