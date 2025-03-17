@@ -27,7 +27,6 @@ Local $hTreeViewRight = GUICtrlCreateTreeView($iLeft, $iTop, $iCtrlWidth, $iCtrl
 $iTop+=$iCtrlHeight+$iSpace
 Local $hListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
 
-
 ; Create TLE system for the left side
 Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui)
 If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
@@ -53,6 +52,8 @@ If @error Then ConsoleWrite("__TreeListExplorer_SetRoot failed: "&@error&":"&@ex
 __TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir)
 If @error Then ConsoleWrite("__TreeListExplorer_OpenPath failed: "&@error&":"&@extended&@crlf)
 
+Local $idButtonTest = GUICtrlCreateButton("Test", $iSpace, $iSpace)
+
 GUISetState(@SW_SHOW)
 
 ConsoleWrite("Left root: "&__TreeListExplorer_GetRoot($hTLESystemLeft)&" Left folder: "&__TreeListExplorer_GetPath($hTLESystemLeft)&@crlf)
@@ -67,6 +68,11 @@ while True
 	If $iMsg=-3 Then
 		__TreeListExplorer_Shutdown()
 		Exit
+	EndIf
+	If $iMsg=$idButtonTest Then
+		 __TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir, ".bash_history")
+		; ConsoleWrite("CURRENT PATH: "&__TreeListExplorer_GetPath($hTLESystemRight)&@crlf)
+		;__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
 	EndIf
 WEnd
 
