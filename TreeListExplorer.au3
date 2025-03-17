@@ -15,7 +15,7 @@
 ; Language ......: English
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
-; Version .......: 2.7.0
+; Version .......: 2.8.0
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -62,9 +62,10 @@
 ; __TreeListExplorer__RelPathIsFile
 ; __TreeListExplorer__KeyProc
 ; __TreeListExplorer__WinProc
+; __TreeListExplorer__ListViewOpenCurrentItem
 ; __TreeListExplorer__HandleViewCallback
 ; __TreeListExplorer__HandleSystemCallback
-; __TreeListExplorer__OpenAndSelectLast
+; __TreeListExplorer__GetPathAndLast
 ; __TreeListExplorer__ConsoleWriteCallbackError
 ; ===============================================================================================================================
 
@@ -85,8 +86,9 @@ Global $__TreeListExplorer__Data[]
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: __TreeListExplorer_StartUp
 ; Description ...: StartUp of the TLE UDF initializing required variables. Must be called before using other UDF functions.
-; Syntax ........: __TreeListExplorer_StartUp([$iLang = $__TreeListExplorer_Lang_EN])
+; Syntax ........: __TreeListExplorer_StartUp([$iLang = $__TreeListExplorer_Lang_EN[, $iIconSize = 16]])
 ; Parameters ....: $iLang               - [optional] an integer to set the language ($__TreeListExplorer_Lang_EN, $__TreeListExplorer_Lang_DE). Default is $__TreeListExplorer_Lang_EN.
+;                  $iIconSize           - [optional] the size for icons in the Tree-/ListView. Default is 16.
 ; Return values .: True on success.
 ; Author ........: Kanashius
 ; Modified ......:
@@ -101,12 +103,12 @@ Global $__TreeListExplorer__Data[]
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN)
+Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize = 16)
 	Local $arLangData = [["Filename", "Size", "Date created"], _
 						 ["Dateiname", "Größe", "Erstelldatum"]]
 
 	If $iLang<0 Or $iLang>UBound($arLangData)-1 Then Return SetError(1, 0, False)
-	Local $hImageList = _GUIImageList_Create(16, 16, 5, 1)
+	Local $hImageList = _GUIImageList_Create($iIconSize, $iIconSize, 5, 1)
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 3) ; Folder-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 110) ; Folder-Icon checked
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 1) ; File-Icon
@@ -209,7 +211,6 @@ Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = "", $sCallbackFolder 
 	$mSystem.sSelectedOld = -1
 	$mSystem.bReloadFolder = False
 	$mSystem.bReloadAllFolders = False
-	$mSystem.bSuppressExpand = False
 	$mSystem.hGui = $hGui
 	$mSystem.sCallbackFolder = $sCallbackFolder
 	$mSystem.sCallbackSelect = $sCallbackSelect
@@ -616,7 +617,6 @@ EndFunc
 ;                  $sPath               - [optional] a folder or file relative to root as string value. Default is "".
 ;                                         If $sPath=Default, the current path is used.
 ;                  $sSelect             - [optional] a folder/file to select as string value. Default is "".
-;                  $bSuppressExpand     - [optional] if true, the last folder is not expanded
 ; Return values .: True on success
 ; Author ........: Kanashius
 ; Modified ......:
@@ -629,7 +629,7 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer__OpenPath($iSystem, $sPath = "", $sSelect = "", $bSuppressExpand = False)
+Func __TreeListExplorer__OpenPath($iSystem, $sPath = "", $sSelect = "")
 	If $sPath=Default Then $sPath = __TreeListExplorer__GetCurrentPath($iSystem)
 	If $sPath<>"" And Not FileExists(__TreeListExplorer__GetCurrentRoot($iSystem) & $sPath) Then Return SetError(3, 0, False)
 	If $sPath<>"" And Not __TreeListExplorer__RelPathIsFolder($iSystem, $sPath) Then ; handle file paths
@@ -643,9 +643,7 @@ Func __TreeListExplorer__OpenPath($iSystem, $sPath = "", $sSelect = "", $bSuppre
 	If $sPathAbs<>"" And Not FileExists($sPathAbs) Then Return SetError(4, 2, False)
 	$__TreeListExplorer__Data["mSystems"][$iSystem]["sSelected"] = $sSelect
 	$__TreeListExplorer__Data["mSystems"][$iSystem]["sFolder"] = $sPath
-	If $bSuppressExpand Then $__TreeListExplorer__Data["mSystems"][$iSystem]["bSuppressExpand"] = True
 	__TreeListExplorer__UpdateSystemViews($iSystem)
-	If $bSuppressExpand Then $__TreeListExplorer__Data["mSystems"][$iSystem]["bSuppressExpand"] = False
 	Return True
 EndFunc
 
@@ -856,26 +854,26 @@ Func __TreeListExplorer__UpdateView($hView)
 		$__TreeListExplorer__Data["mViews"][$hView]["sSelected"] = $mSystem.sSelected
 		Switch $mView.iType
 			Case $__TreeListExplorer__Type_TreeView
-				Local $arFolders = StringSplit($mSystem.sFolder, "\", BitOR(1, 2))
+				Local $sFolder = $mSystem.sFolder & $mSystem.sSelected
+				Local $arFolders = StringSplit($sFolder, "\", BitOR(1, 2))
 				Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
-				If $bUpdateFolder Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, True)
+				__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, True)
 				If $mSystem.sRoot <> "" Then ; Root item is not part of $mSystem.sFolder
-					If $mSystem.sFolder<>"" Then
+					If $mSystem.sFolder<>"" Then ; expand the root item
 						__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
 					Else
 						__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadFolder Or $bReload)
 					EndIf
 					$hItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
 				EndIf
-				Local $iDepth = UBound($arFolders)-2
-				If $mSystem.bSuppressExpand Then $iDepth-=1
-				For $i=0 To $iDepth Step 1 ; last field is always empty
+				; expand all items on the path below the current one
+				For $i=0 To UBound($arFolders)-3 Step 1 ; last field is always empty, second to last will only be selected
 					While _GUICtrlTreeView_GetText($hView, $hItem)<>$arFolders[$i]
 						$hItem = _GUICtrlTreeView_GetNextSibling($hView, $hItem)
 						If $hItem=0 Then ExitLoop
 					WEnd
 					If $hItem<>0 Then
-						If $i<>UBound($arFolders)-2 Then
+						If $i<>UBound($arFolders)-3 Then
 							__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
 							$hItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
 						Else
@@ -883,26 +881,41 @@ Func __TreeListExplorer__UpdateView($hView)
 						EndIf
 					EndIf
 				Next
-				If $mSystem.sSelected<>"" Then
-					If $mSystem.sFolder="" Then $hItem = _GUICtrlTreeView_GetFirstItem($hView)
-					Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
-					Local $sFilename = $mSystem.sSelected
-					While $hChild<>0
-						If _GUICtrlTreeView_GetText($hView, $hChild)=$sFilename Then
-							_GUICtrlTreeView_EnsureVisible($hView, $hChild)
-							_GUICtrlTreeView_SelectItem($hView, $hChild)
-							ExitLoop
-						EndIf
-						$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
-					WEnd
-				Else
-					If $mSystem.sRoot <> "" And $mSystem.sFolder = "" Then
-						_GUICtrlTreeView_SelectItem($hView, _GUICtrlTreeView_GetFirstItem($hView)) ; select root item, if current directory is root
-					ElseIf $mSystem.sFolder <> "" And $hItem<>0 Then
-						_GUICtrlTreeView_SelectItem($hView, $hItem)
+				; select the current item (or selected item if applicable)
+				If UBound($arFolders)>=1 Then
+					Local $sSelected = $arFolders[UBound($arFolders)-1] ; selection changed
+					If UBound($arFolders)>=2 Then $sSelected = $arFolders[UBound($arFolders)-2] ; folder changed = last folder should be selected
+					If $sSelected<>"" Then
+						Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
+						If UBound($arFolders)<=2 Then $hChild = $hItem ; handle root items
+						While $hChild<>0 ; search and select the item if possible
+							If _GUICtrlTreeView_GetText($hView, $hChild)=$sSelected Then
+								; select the item of the selected file/folder, if the opened folder is expanded
+								If _GUICtrlTreeView_GetExpanded($hView, $hChild) And $arFolders[UBound($arFolders)-1]<>"" Then ; enable folder/file selection, if folder is expanded
+									$sSelected = $arFolders[UBound($arFolders)-1]
+									$hChild = _GUICtrlTreeView_GetFirstChild($hView, $hChild)
+									ContinueLoop
+								Else ; otherwise select the opened folder
+									_GUICtrlTreeView_EnsureVisible($hView, $hChild)
+									_GUICtrlTreeView_SelectItem($hView, $hChild)
+									ExitLoop
+								EndIf
+							EndIf
+							$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
+						WEnd
+						__TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect", $sSelected)
 					EndIf
+				Else ; handle root item selection
+					Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
+					If _GUICtrlTreeView_GetNextSibling($hView, $hItem)=0 Then
+						_GUICtrlTreeView_SelectItem($hView, $hItem)
+					Else
+						Local $hItem = _GUICtrlTreeView_GetSelection($hView)
+						If $hItem<>0 Then  _GUICtrlTreeView_SetSelected($hView, $hItem, False)
+					EndIf
+					__TreeListExplorer__HandleSystemCallback($mView.iSystem, "sCallbackSelect", "$sCallbackSelect")
 				EndIf
-				If $bUpdateFolder Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, False)
+				__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, False)
 			Case $__TreeListExplorer__Type_ListView
 				If $bUpdateFolder Then
 					__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $mSystem.sFolder, True)
@@ -950,6 +963,7 @@ Func __TreeListExplorer__UpdateView($hView)
 							For $j=1 To UBound($arSel)-1 Step 1
 								_GUICtrlListView_SetItemSelected($hView, $arSel[$j], False)
 							Next
+							_GUICtrlListView_SetSelectionMark($hView, $i)
 							_GUICtrlListView_SetItemSelected($hView, $i)
 							ExitLoop
 						EndIf
@@ -1411,6 +1425,10 @@ Func __TreeListExplorer__KeyProc($nCode, $wParam, $lParam)
 					Switch $__TreeListExplorer__Data.mViews[$hView].iType
 						Case $__TreeListExplorer__Type_Input
 							If $vkCode=13 Then __TreeListExplorer_OpenPath(__TreeListExplorer__GetHandleFromSystemID($iSystem), _GUICtrlEdit_GetText($hView))
+						Case $__TreeListExplorer__Type_ListView
+							If $vkCode=13 Then
+								__TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
+							EndIf
 					EndSwitch
 				Next
 			EndIf
@@ -1461,7 +1479,6 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 											__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $sPath, True)
 											_GUICtrlTreeView_BeginUpdate($hView)
 											__TreeListExplorer__ExpandTreeitem($hView, $hItem)
-											__TreeListExplorer__OpenPath($iSystem, __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlTreeView_GetText($hView, $hItem))
 											_GUICtrlTreeView_EndUpdate($hView)
 											__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", "$sCallbackLoading", $sPath, False)
 											__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_ExpandTree)
@@ -1473,10 +1490,9 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 							Local $iY =_WinAPI_GetMousePosY(True, $hView)
 							Local $hItem =_GUICtrlTreeView_HitTestItem($hView, $iX, $iY)
 							Local $iHitStat =_GUICtrlTreeView_HitTest($hView, $iX, $iY)
-							If $hItem<>0 And BitAND($iHitStat, 4) Then
+							If $hItem<>0 And (BitAND($iHitStat, 4) Or BitAND($iHitStat, 2)) Then
 								Local $sPath = __TreeListExplorer__TreeViewGetRelPath($iSystem, $hView, $hItem)
-								; __TreeListExplorer__OpenAndSelectLast($iSystem, $sPath)
-								__TreeListExplorer__OpenPath($iSystem, $sPath, "", True)
+								__TreeListExplorer__OpenPath($iSystem, $sPath)
 								__TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", "$sCallbackOnClick", $hItem)
 							EndIf
 						Case $NM_DBLCLK
@@ -1484,7 +1500,7 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 							Local $iY =_WinAPI_GetMousePosY(True, $hView)
 							Local $hItem =_GUICtrlTreeView_HitTestItem($hView, $iX, $iY)
 							Local $iHitStat =_GUICtrlTreeView_HitTest($hView, $iX, $iY)
-							If $hItem<>0 And BitAND($iHitStat, 4) Then
+							If $hItem<>0 And (BitAND($iHitStat, 4) Or BitAND($iHitStat, 2)) Then
 								__TreeListExplorer__HandleViewCallback($hView, "sCallbackDBClick", "$sCallbackOnDoubleClick", $hItem)
 							EndIf
 						Case $TVN_SELCHANGEDA, $TVN_SELCHANGEDW
@@ -1494,7 +1510,7 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 									Local $hItem = _GUICtrlTreeView_GetSelection($hView)
 									If $hItem<>0 And Not __TreeListExplorer__IsViewUpdating($hView) Then
 										Local $sPath = __TreeListExplorer__TreeViewGetRelPath($iSystem, $hView, $hItem)
-										__TreeListExplorer__OpenAndSelectLast($iSystem, $sPath)
+										__TreeListExplorer__OpenPath($iSystem, $sPath)
 									EndIf
 							EndSwitch
 					EndSwitch
@@ -1507,41 +1523,67 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 								Local $tLVKeyDown = DllStructCreate($tagNMLVKEYDOWN, $ilParam)
 								Local $iVKey = DllStructGetData($tLVKeyDown, "VKey")
 								$bKeyPressed = ($iVKey=40) Or ($iVKey=38) ; Key pressed: UP or DOWN
-								If $iVKey=40 Then ; Down
-									$iIndex = $iIndex + 1
-									If $iIndex>=_GUICtrlListView_GetItemCount($hView) Then $iIndex = -1
-								ElseIf $iVKey=38 Then ; Up
-									$iIndex = $iIndex - 1
+								If $iIndex<>-1 Then
+									If $iVKey=40 Then ; Down
+										$iIndex = $iIndex + 1
+										If $iIndex>=_GUICtrlListView_GetItemCount($hView) Then $iIndex = -1
+									ElseIf $iVKey=38 Then ; Up
+										$iIndex = $iIndex - 1
+										If $iIndex<0 Then $iIndex=0
+									EndIf
 								EndIf
+							EndIf
+							If $bKeyPressed And $iIndex=-1 And _GUICtrlListView_GetItemCount($hView)>0 Then
+								$iIndex = 0
+								If _GUICtrlListView_GetItemCount($hView)>1 And _GUICtrlListView_GetItemText($hView, 0)=".." Then $iIndex = 1
 							EndIf
 							If $NM_CLICK Or $bKeyPressed Then
 								If $iIndex<>-1 Then
 									Local $sSelection = _GUICtrlListView_GetItemText($hView, $iIndex, 0)
-									If $sSelection<>".." Then
-										__TreeListExplorer__OpenAndSelectLast($iSystem, __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0))
-										__TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", "$sCallbackOnClick", $iIndex)
-									EndIf
+									Local $arPath = __TreeListExplorer__GetPathAndLast(__TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0))
+									__TreeListExplorer__OpenPath($iSystem, $arPath[0], $arPath[1])
+									__TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", "$sCallbackOnClick", $iIndex)
 								EndIf
 							EndIf
+							If $NM_CLICK Then Return 1 ; required, otherwise some events are sent, where the icon index is the event id => random GuiGetMsg events triggered
 						Case $NM_DBLCLK
+							__TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
 							Local $iIndex = _GUICtrlListView_GetSelectionMark($hView)
-							If $iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, 0) = ".." Then
-								Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem)
-								If $sPath <> "" Then
-									$sPath = __TreeListExplorer__RemoveLastFolderFromPath($sPath)
-									__TreeListExplorer__OpenPath($iSystem, $sPath)
-								EndIf
-							ElseIf $iIndex<>-1 Then
-								Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0)
-								__TreeListExplorer__OpenPath($iSystem, $sPath)
-								__TreeListExplorer__HandleViewCallback($hView, "sCallbackDBClick", "$sCallbackOnDoubleClick", $iIndex)
-							EndIf
+							If $iIndex<>-1 Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackDBClick", "$sCallbackOnDoubleClick", $iIndex)
 					EndSwitch
 			EndSwitch
 			ExitLoop
 		Next
 	EndIf
 	If MapExists($__TreeListExplorer__Data.mGuis, $hWnd) Then Return _WinAPI_CallWindowProc($__TreeListExplorer__Data.mGuis[$hWnd].hPrevProc, $hWnd, $iMsg, $iwParam, $ilParam)
+EndFunc
+
+; #INTERNAL_USE_ONLY# ===========================================================================================================
+; Name ..........: __TreeListExplorer__ListViewOpenCurrentItem
+; Description ...: Get the selected item in the listview and open the folder (go back if it is ".."). Files are ignored.
+; Syntax ........: __TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
+; Parameters ....: $iSystem             - an integer value.
+;                  $hView               - a handle value.
+; Return values .: None
+; Author ........: Kanashius
+; Modified ......:
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: No
+; ===============================================================================================================================
+Func __TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
+	Local $iIndex = _GUICtrlListView_GetSelectionMark($hView)
+	If $iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, 0) = ".." Then
+		Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem)
+		If $sPath <> "" Then
+			$sPath = __TreeListExplorer__RemoveLastFolderFromPath($sPath)
+			__TreeListExplorer__OpenPath($iSystem, $sPath)
+		EndIf
+	ElseIf $iIndex<>-1 Then
+		Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0)
+		__TreeListExplorer__OpenPath($iSystem, $sPath)
+	EndIf
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
@@ -1610,15 +1652,26 @@ EndFunc
 ; Example .......: No
 ; ===============================================================================================================================
 Func __TreeListExplorer__HandleSystemCallback($iSystem, $sCallbackName, $sVarName, $param1=Default, $param2=Default, $param3=Default, $param4=Default, $param5=Default, $param6=Default, $param7=Default)
+	Local $iNumParams = @NumParams, $bCallbackSplit = False
+	If $sCallbackName="sCallbackSelect" And @NumParams>3 Then
+		$bCallbackSplit = True
+		$iNumParams = 3
+		$param1 = Default
+	EndIf
 	Local $mSystem = $__TreeListExplorer__Data.mSystems[$iSystem]
 	If $mSystem[$sCallbackName]<>Default Then
-		Local $arParams[@NumParams-3+5]
+		Local $arParams[$iNumParams-3+5]
 		$arParams[0] = "CallArgArray"
 		$arParams[1] = __TreeListExplorer__GetHandleFromSystemID($iSystem)
 		$arParams[2] = __TreeListExplorer__GetCurrentRoot($iSystem)
 		$arParams[3] = __TreeListExplorer__GetCurrentPath($iSystem)
 		$arParams[4] = __TreeListExplorer__GetSelected($iSystem)
-		For $i=1 To @NumParams-3 Step 1
+		If $bCallbackSplit Then
+			Local $arPath = __TreeListExplorer__GetPathAndLast(__TreeListExplorer__GetCurrentPath($iSystem))
+			$arParams[3] = $arPath[0]
+			$arParams[4] = $arPath[1]
+		EndIf
+		For $i=1 To $iNumParams-3 Step 1
 			$arParams[4+$i] = Eval("param"&$i)
 		Next
 		Call($mSystem[$sCallbackName], $arParams)
@@ -1627,24 +1680,25 @@ Func __TreeListExplorer__HandleSystemCallback($iSystem, $sCallbackName, $sVarNam
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
-; Name ..........: __TreeListExplorer__OpenAndSelectLast
-; Description ...: Split the given path, open the parent folder and select the last file/folder part
-; Syntax ........: __TreeListExplorer__OpenAndSelectLast($iSystem, $sPath)
-; Parameters ....: $iSystem             - the TLE system ID.
-;                  $sPath               - the path as string.
-; Return values .: True on success
+; Name ..........: __TreeListExplorer__GetPathAndLast
+; Description ...: Split the given path in the parent folder and the last file/folder part
+; Syntax ........: __TreeListExplorer__GetPathAndLast($iSystem, $sPath)
+; Parameters ....: $sPath               - the path as string.
+; Return values .: Array with $ar[0] = First part and $ar[1] = last folder/file
 ; Author ........: Kanashius
 ; Modified ......:
-; Remarks .......: May fail, if the RegExp could not parse the path to split it
+; Remarks .......: May fail, if the RegExp could not parse the path to split it. Then it returns ["", ""].
 ; Related .......:
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer__OpenAndSelectLast($iSystem, $sPath)
+Func __TreeListExplorer__GetPathAndLast($sPath)
 	Local $arFolder = StringRegExp($sPath, "^(.*?\\?)([^\\]*?)\\?$", 1) ; split path and last file/folder
-	If @error Or UBound($arFolder)<>2 Then Return False
-	__TreeListExplorer__OpenPath($iSystem, $arFolder[0], $arFolder[1])
-	Return True
+	If @error Or UBound($arFolder)<>2 Then
+		Local $arResult = ["", ""]
+		Return $arResult
+	EndIf
+	Return $arFolder
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
