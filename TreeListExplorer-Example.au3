@@ -21,11 +21,13 @@ Local $iLeft = $iSpace*2 + $iCtrlWidth
 Local $iTop = $iSpace
 GUICtrlCreateLabel("Current Folder:", $iLeft, $iTop, 75, 20)
 Local $hLabelCurrentFolderRight = GUICtrlCreateLabel("", $iLeft+75, $iTop, $iCtrlWidth-75, 20)
-Local $hProgressRight = GUICtrlCreateProgress($iLeft, $iTop+20+$iSpace, $iCtrlWidth, 20)
+GUICtrlCreateLabel("Selected Folder:", $iLeft, $iTop+20+$iSpace, 80, 20)
+Local $hLabelSelectRight = GUICtrlCreateLabel("", $iLeft+80, $iTop+20+$iSpace, $iCtrlWidth-80, 20)
+Local $hProgressRight = GUICtrlCreateProgress($iLeft, $iTop+40+$iSpace*2, $iCtrlWidth, 20)
 Local $iTop = $iSpace*2+$iTopLine
 Local $hTreeViewRight = GUICtrlCreateTreeView($iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
 $iTop+=$iCtrlHeight+$iSpace
-Local $hListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
+Local $hListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight, $LVS_SHOWSELALWAYS)
 
 ; Create TLE system for the left side
 Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui)
@@ -37,12 +39,12 @@ __TreeListExplorer_AddView($hTLESystemLeft, $hListViewLeft)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $hListView failed: "&@error&":"&@extended&@crlf)
 
 ; Create TLE system for the right side
-Local $hTLESystemRight = __TreeListExplorer_CreateSystem($hGui, "", "_currentFolder")
+Local $hTLESystemRight = __TreeListExplorer_CreateSystem($hGui, "", "_currentFolder", "_selectCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system: ShowFolders=True, ShowFiles=True
-__TreeListExplorer_AddView($hTLESystemRight, $hTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback", "_selectCallback")
+__TreeListExplorer_AddView($hTLESystemRight, $hTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $hTreeView failed: "&@error&":"&@extended&@crlf)
-__TreeListExplorer_AddView($hTLESystemRight, $hListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback", "_selectCallback")
+__TreeListExplorer_AddView($hTLESystemRight, $hListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $hListView failed: "&@error&":"&@extended&@crlf)
 
 ; Set the root directory for the right side to the users directory
@@ -70,38 +72,43 @@ while True
 		Exit
 	EndIf
 	If $iMsg=$idButtonTest Then
-		 __TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir, ".bash_history")
-		; ConsoleWrite("CURRENT PATH: "&__TreeListExplorer_GetPath($hTLESystemRight)&@crlf)
-		;__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
+		__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
+		__TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir, "Desktop")
 	EndIf
 WEnd
 
-Func _currentFolder($hSystem, $sRoot, $sFolder)
-	GUICtrlSetData($hLabelCurrentFolderRight, $sRoot&$sFolder)
-	; ConsoleWrite("Current folder in system "&$hSystem&": "&$sRoot&$sFolder&@CRLF)
+Func _currentFolder($hSystem, $sRoot, $sFolder, $sSelected)
+	GUICtrlSetData($hLabelCurrentFolderRight, $sRoot&$sFolder&"["&$sSelected&"]")
+	; ConsoleWrite("Folder "&$hSystem&": "&$sRoot&$sFolder&"["&$sSelected&"]"&@CRLF)
 EndFunc
 
-Func _selectCallback($hSystem, $hView, $sRoot, $sFolder)
-	ConsoleWrite("Select at "&$hView&": "&$sRoot&$sFolder&@CRLF)
+Func _selectCallback($hSystem, $sRoot, $sFolder, $sSelected)
+	GUICtrlSetData($hLabelSelectRight, $sRoot&$sFolder&"["&$sSelected&"]")
+	; ConsoleWrite("Select "&$hSystem&": "&$sRoot&$sFolder&"["&$sSelected&"]"&@CRLF)
 EndFunc
 
-Func _clickCallback($hSystem, $hView, $sRoot, $sFolder)
-	ConsoleWrite("Click at "&$hView&": "&$sRoot&$sFolder&@CRLF)
+Func _clickCallback($hSystem, $hView, $sRoot, $sFolder, $sSelected, $item)
+	ConsoleWrite("Click at "&$hView&": "&$sRoot&$sFolder&"["&$sSelected&"] :"&$item&@CRLF)
+	If $hView=GUICtrlGetHandle($hListViewRight) Then
+		Local $sSel = _GUICtrlListView_GetSelectedIndices($hView)
+		If StringInStr($sSel, "|") Then ConsoleWrite("Multiple selected items: "&$sSel&@CRLF)
+	EndIf
 EndFunc
 
-Func _doubleClickCallback($hSystem, $hView, $sRoot, $sFolder)
-	ConsoleWrite("Double click at "&$hView&": "&$sRoot&$sFolder&@CRLF)
+Func _doubleClickCallback($hSystem, $hView, $sRoot, $sFolder, $sSelected, $item)
+	ConsoleWrite("Double click at "&$hView&": "&$sRoot&$sFolder&"["&$sSelected&"] :"&$item&@CRLF)
 EndFunc
 
-Func _loadingCallback($hSystem, $hView, $sRoot, $sFolder, $bLoading)
+Func _loadingCallback($hSystem, $hView, $sRoot, $sFolder, $sSelected, $sPath, $bLoading)
+	; ConsoleWrite("Loading "&$hSystem&": Status: "&$bLoading&" View: "&$hView&" >> "&$sRoot&$sFolder&"["&$sSelected&"] >> "&$sPath&@CRLF)
 	If $bLoading Then
 		Switch $hView
 			Case GUICtrlGetHandle($hTreeViewLeft)
-				ToolTip("Load TreeView: "&$sRoot&$sFolder)
-				;ConsoleWrite("Load: "&$hView&" >> "&$sRoot&$sFolder&@crlf)
+				ToolTip("Load TreeView: "&$sPath)
+				;ConsoleWrite("Load: "&$hView&" >> "&$sPath&@crlf)
 			Case GUICtrlGetHandle($hListViewLeft)
-				ToolTip("Load ListView: "&$sRoot&$sFolder)
-				;ConsoleWrite("Load: "&$hView&" >> "&$sRoot&$sFolder&@crlf)
+				ToolTip("Load ListView: "&$sPath)
+				;ConsoleWrite("Load: "&$hView&" >> "&$sPath&@crlf)
 			Case GUICtrlGetHandle($hListViewRight), GUICtrlGetHandle($hTreeViewRight)
 				GUICtrlSetData($hProgressRight, 50)
 		EndSwitch
@@ -111,6 +118,6 @@ Func _loadingCallback($hSystem, $hView, $sRoot, $sFolder, $bLoading)
 				GUICtrlSetData($hProgressRight, 0)
 		EndSwitch
 		ToolTip("")
-		;ConsoleWrite("Done: "&$hView&" >> "&$sRoot&$sFolder&@crlf)
+		;ConsoleWrite("Done: "&$hView&" >> "&$sPath&@crlf)
 	EndIf
 EndFunc
