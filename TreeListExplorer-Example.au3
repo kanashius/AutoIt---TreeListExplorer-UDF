@@ -80,7 +80,6 @@ while True
 	If $iMsg=$idButtonTest Then
 		__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
 		__TreeListExplorer_Reload($hTLESystemLeft, True) ; reload folder in the right system
-		; __TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir, "Desktop")
 	EndIf
 WEnd
 

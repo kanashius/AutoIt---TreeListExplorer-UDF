@@ -8,6 +8,8 @@
 #include <EditConstants.au3>
 #include <File.au3>
 #include <WindowsConstants.au3>
+#include <GDIPlus.au3>
+#include <WinAPIShellEx.au3>
 
 ; #INDEX# =======================================================================================================================
 ; Title .........: TreeListExplorer
@@ -16,11 +18,12 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.9.1
+; Version .......: 2.9.2
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
 ; __TreeListExplorer_StartUp
+; __TreeListExplorer_FreeIconCache
 ; __TreeListExplorer_Shutdown
 ; __TreeListExplorer_CreateSystem
 ; __TreeListExplorer_DeleteSystem
@@ -99,7 +102,7 @@ Global $__TreeListExplorer__Data[]
 ;                 and create the $__TreeListExplorer_Lang_?? variable.
 ;
 ;                 Errors:
-;                 1 - $iLang not valid
+;                 1 - Parameter not valid (@extended: 1 - $iLang, 2 - $iIconSize)
 ; Related .......:
 ; Link ..........:
 ; Example .......: No
@@ -108,11 +111,14 @@ Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize
 	Local $arLangData = [["Filename", "Size", "Date created", "This PC"], _
 						 ["Dateiname", "Größe", "Erstelldatum", "Dieser PC"]]
 
-	If $iLang<0 Or $iLang>UBound($arLangData)-1 Then Return SetError(1, 0, False)
+	If Not IsInt($iLang) Or $iLang<0 Or $iLang>UBound($arLangData)-1 Then Return SetError(1, 1, False)
+	If Not IsInt($iIconSize) Or $iIconSize<0 Then Return SetError(1, 2, False)
+	$__TreeListExplorer__Data.iIconSize = $iIconSize
+	_GDIPlus_Startup()
 	Local $hImageList = _GUIImageList_Create($iIconSize, $iIconSize, 5, 1)
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 3) ; Folder-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 110) ; Folder-Icon checked
-	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 1) ; File-Icon
+	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 0) ; File-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 5) ; Disc-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 7) ; Changeableinput-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 8) ; Harddrive-Icon
@@ -121,8 +127,9 @@ Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 53) ; Unknown-Icon
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 15) ; This PC
 	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 109) ; Dummy element (Crossed O)
+	_GUIImageList_AddIcon($hImageList, 'shell32.dll', 305) ; Dummy element (Crossed O)
+	$__TreeListExplorer__Data.iCustomIconsStartIndex = _GUIImageList_GetImageCount($hImageList)
 	$__TreeListExplorer__Data.hIconList = $hImageList
-	$__TreeListExplorer__Data.iIconIndex = _GUIImageList_GetImageCount($hImageList) ; next index, if an icon is added
 	Local $mIcons[]
 	$__TreeListExplorer__Data.mIcons = $mIcons
 	Local $mSystems[]
@@ -137,6 +144,34 @@ Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize
 	$__TreeListExplorer__Data.hKeyPrevHook = _WinAPI_SetWindowsHookEx($WH_KEYBOARD_LL, DllCallbackGetPtr($__TreeListExplorer__Data.hKeyProc), _WinAPI_GetModuleHandle(0), 0)
 	$__TreeListExplorer__Data.arLangData = $arLangData
 	Return True
+EndFunc
+
+; #INTERNAL_USE_ONLY# ===========================================================================================================
+; Name ..........: __TreeListExplorer_FreeIconCache
+; Description ...: Removes all cached icons for all extensions or files
+; Syntax ........: __TreeListExplorer_FreeIconCache()
+; Parameters ....:
+; Return values .: None
+; Author ........: Kanashius
+; Modified ......:
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: No
+; ===============================================================================================================================
+Func __TreeListExplorer_FreeIconCache()
+	Local $hImageList = $__TreeListExplorer__Data.hIconList, $iCustomIndex = $__TreeListExplorer__Data.iCustomIconsStartIndex
+	While _GUIImageList_GetImageCount($hImageList)>$iCustomIndex
+		Local $hIcon = _GUIImageList_GetIcon($hImageList, $iCustomIndex)
+		_GUIImageList_Remove($hImageList, $iCustomIndex)
+		_GUIImageList_DestroyIcon($hIcon)
+	WEnd
+	Local $mEmpty[]
+	$__TreeListExplorer__Data["mIcons"] = $mEmpty
+	Local $arSystemKeys = MapKeys($__TreeListExplorer__Data.mSystems)
+	For $i=0 To UBound($arSystemKeys)-1 Step 1
+		__TreeListExplorer_Reload(__TreeListExplorer__GetHandleFromSystemID($arSystemKeys[$i]), True)
+	Next
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
@@ -163,6 +198,8 @@ Func __TreeListExplorer_Shutdown()
 	_GUIImageList_Destroy($__TreeListExplorer__Data.hIconList)
 	Local $mMap[]
 	$__TreeListExplorer__Data = $mMap
+	_GDIPlus_Shutdown()
+	__TreeListExplorer_FreeIconCache()
 	Return True
 EndFunc
 
@@ -1030,31 +1067,107 @@ EndFunc
 ; Example .......: No
 ; ===============================================================================================================================
 Func __TreeListExplorer__FileGetIconIndex($sPath)
+	If __TreeListExplorer__PathIsFolder($sPath) Then Return 0 ; Default folder icon
 	Local $arExt = StringRegExp($sPath, "^.*[^\\](\.[^\\]*?)$", 1)
 	If @error Or UBound($arExt)<>1 Then Return 2 ; Default file icon
-	Local $sExt = $arExt[0]
+	Local $sExt = StringLower($arExt[0])
 	If MapExists($__TreeListExplorer__Data.mIcons, $sExt) Then Return $__TreeListExplorer__Data.mIcons[$sExt]
+	If MapExists($__TreeListExplorer__Data.mIcons, $sPath) Then Return $__TreeListExplorer__Data.mIcons[$sExt]
 
-	Local $sRegData = RegRead("HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" & $sExt, "ProgID")
-	If @error Then
-		$sRegData = RegRead("HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" & $sExt & "\UserChoice", "ProgID")
+	Local $sIconPath = -1, $iIconIndex = 0, $bAddForExtension = False
+	; handle .url (links)
+	If $sExt=".url" Then
+		$sIconPath = IniRead($sPath, "InternetShortcut", "IconFile", -1)
+		$iIconIndex = IniRead($sPath, "InternetShortcut", "IconIndex", -1)
+	EndIf
+	; handle .lnk (shortcuts)
+	If $sExt=".lnk" Then ; todo maybe add the link symbol (arrow) to the icon
+
+	EndIf
+	; Handling for special extensions
+	Switch $sExt
+		Case ".exe"
+			$sIconPath = $sPath
+		Case ".url"
+			$sIconPath = IniRead($sPath, "InternetShortcut", "IconFile", -1)
+			$iIconIndex = IniRead($sPath, "InternetShortcut", "IconIndex", -1)
+		Case ".lnk"
+			Local $arShortcutData = FileGetShortcut($sPath)
+			If $arShortcutData[4]<>"" Then ; icon file provided
+				$sIconPath = $arShortcutData[4]
+				$iIconIndex = $arShortcutData[5]
+			Else ; otherwise get icon from the linked path
+				Return __TreeListExplorer__FileGetIconIndex($arShortcutData[0])
+			EndIf
+	EndSwitch
+	If $sIconPath=-1 Then
+		Local $sRegData = RegRead("HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" & $sExt, "ProgID")
 		If @error Then
-			$sRegData = RegRead("HKCR\" & $sExt, "")
+			$sRegData = RegRead("HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" & $sExt & "\UserChoice", "ProgID")
+			If @error Then
+				$sRegData = RegRead("HKCR\" & $sExt, "")
+			EndIf
+		EndIf
+		If $sRegData<>"" Then $sRegData = RegRead("HKCR\" & $sRegData & "\DefaultIcon", "")
+		If StringInStr($sRegData, "@")=1 Then ; Handle urls with @{...}
+			Local $sIconPath = _WinAPI_LoadIndirectString($sRegData)
+			If @error Then $sIconPath = -1
+		ElseIf StringInStr($sRegData, ",") Then ; Handle <Path>, <iIndex> e.g.:  ...shell32.dll, 0
+			Local $arParts = StringRegExp($sRegData, '"?(.*?)"?,(-?\d+)', 1)
+			If UBound($arParts)=2 Then
+				$sIconPath = $arParts[0]
+				$iIconIndex = $arParts[1]
+			EndIf
+		ElseIf $sRegData<>"" Then ; Handle path without index
+			$sIconPath = $sRegData
+		EndIf
+		$bAddForExtension = True
+	EndIf
+	If $sIconPath<>-1 Then
+		Local $sIconExt = StringRight($sIconPath, 4), $sMapKey = $sPath
+		If $bAddForExtension Then $sMapKey = $sExt
+		If $sIconExt=".dll" Or $sIconExt=".exe" Or $sIconExt=".ico" Then ; icon to extract
+			Local $hIcon = _WinAPI_ExtractIcon($sIconPath, $iIconIndex, True)
+			If $hIcon<>0 Then
+				Local $iIndex = _GUIImageList_ReplaceIcon($__TreeListExplorer__Data.hIconList, -1, $hIcon)
+				If $iIndex>=0 Then
+					$__TreeListExplorer__Data["mIcons"][$sMapKey] = $iIndex
+					Return $iIndex
+				EndIf
+			EndIf
+		Else ; normal image file
+			Local $hBitmap = _GDIPlus_BitmapCreateFromFile($sIconPath)
 			If @error Then Return 2 ; Default file icon
+			Local $iIconSize = $__TreeListExplorer__Data.iIconSize
+			Local $hBitmapResized = _GDIPlus_ImageResize($hBitmap, $iIconSize, $iIconSize)
+			Local $hImg = _GDIPlus_BitmapCreateHBITMAPFromBitmap($hBitmapResized)
+			Local $iIndex = _GUIImageList_Add($__TreeListExplorer__Data.hIconList, $hImg)
+			_GDIPlus_BitmapDispose($hBitmap)
+			_GDIPlus_BitmapDispose($hBitmapResized)
+			If $iIndex>=0 Then
+				$__TreeListExplorer__Data["mIcons"][$sMapKey] = $iIndex
+				Return $iIndex
+			EndIf
+		EndIf
+	Else
+		Local $tSHFILEINFO = DllStructCreate($tagSHFILEINFO)
+		Local $dwFlags = BitOR($SHGFI_USEFILEATTRIBUTES, $SHGFI_ICON, $SHGFI_ICONLOCATION)
+		_WinAPI_ShellGetFileInfo($sPath, $dwFlags, $FILE_ATTRIBUTE_NORMAL, $tSHFILEINFO)
+		;ConsoleWrite("---------"&$sPath&"--------"&@crlf)
+		If DllStructGetData($tSHFILEINFO, 2)<>0 Then ; ignore missing icons (SystemIcon=0 equals Default file icon)
+			;_ToStringC($tSHFILEINFO)
+			If DllStructGetData($tSHFILEINFO, 1)>0 Then
+				Local $iIndex = _GUIImageList_ReplaceIcon($__TreeListExplorer__Data.hIconList, -1, DllStructGetData($tSHFILEINFO, 1))
+				If $iIndex>=0 Then
+					$__TreeListExplorer__Data["mIcons"][$sExt] = $iIndex
+					Return $iIndex
+				EndIf
+			EndIf
+		Else
+			If DllStructGetData($tSHFILEINFO, 1)>0 Then _WinAPI_DestroyIcon(DllStructGetData($tSHFILEINFO, 1))
 		EndIf
 	EndIf
-	$sRegData = RegRead("HKCR\" & $sRegData & "\DefaultIcon", "")
-	If @error Then Return 2 ; Default file icon
-	Local $arParts = StringSplit($sRegData, ",", BitOR(1, 2))
-	If @error Or UBound($arParts)<>2 Then Return 2 ; Default file icon
-
-	_GUIImageList_AddIcon($__TreeListExplorer__Data.hIconList, $arParts[0], $arParts[1])
-	If @error Then Return 2 ; Default file icon
-
-	Local $iIndex = $__TreeListExplorer__Data.iIconIndex
-	$__TreeListExplorer__Data["iIconIndex"] = $iIndex + 1
-	$__TreeListExplorer__Data["mIcons"][$sExt] = $iIndex
-	Return $iIndex
+	Return 2 ; Default file icon
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
