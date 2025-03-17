@@ -6,4 +6,4 @@ It allows the user to create a TreeListExplorer system (TLE system; __TreeListEx
 To this system any TreeView/ListView/Input controls can be added as view (__TreeListExplorer_AddView), which are then synchronized to show the current folder and automatically updated when the TLE system is changed.
 
 Screenshot of the ([Code Example](TreeListExplorer-Example.au3)):
-![Screenshot of the GUI shown by the example script](TreeListExplorer Example.png)
+![Screenshot of the GUI shown by the example script](TreeListExplorer-Example.png)
