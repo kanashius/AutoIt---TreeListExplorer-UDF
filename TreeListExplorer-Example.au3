@@ -1,3 +1,4 @@
+; #AutoIt3Wrapper_UseX64=Y
 #include "TreeListExplorer.au3"
 #include <GuiTreeView.au3>
 
@@ -29,33 +30,34 @@ Local $idProgressRight = GUICtrlCreateProgress($iLeft, $iTop+40+$iSpace*2, $iCtr
 Local $iTop = $iSpace*2+$iTopLine
 Local $idTreeViewRight = GUICtrlCreateTreeView($iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
 $iTop+=$iCtrlHeight+$iSpace
-Local $idListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight, $LVS_SHOWSELALWAYS)
+Global $idListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight, $LVS_SHOWSELALWAYS)
 
 ; Create TLE system for the left side
-Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui, "", Default, Default, 0)
-If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
+Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui);, "", Default, Default, 0)
+If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem left failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system
 __TreeListExplorer_AddView($hTLESystemLeft, $idInputPathRight)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idInputPathRight failed: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemLeft, $idTreeViewLeft)
-If @error Then ConsoleWrite("__TreeListExplorer_AddView $hTreeView failed: "&@error&":"&@extended&@crlf)
+If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewLeft failed: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemLeft, $idListViewLeft)
-If @error Then ConsoleWrite("__TreeListExplorer_AddView $hListView failed: "&@error&":"&@extended&@crlf)
+If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewLeft failed: "&@error&":"&@extended&@crlf)
 
 ; Create TLE system for the right side
 Local $hTLESystemRight = __TreeListExplorer_CreateSystem($hGui, "", "_currentFolderRight", "_selectCallback")
-If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
+If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem right failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system: ShowFolders=True, ShowFiles=True
 __TreeListExplorer_AddView($hTLESystemRight, $idTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
-If @error Then ConsoleWrite("__TreeListExplorer_AddView $hTreeView failed: "&@error&":"&@extended&@crlf)
+If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewRight failed 2: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
-If @error Then ConsoleWrite("__TreeListExplorer_AddView $hListView failed: "&@error&":"&@extended&@crlf)
+If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewRight failed: "&@error&":"&@extended&@crlf)
 
 ; Set the root directory for the right side to the users directory
 __TreeListExplorer_SetRoot($hTLESystemRight, "C:\Users")
 If @error Then ConsoleWrite("__TreeListExplorer_SetRoot failed: "&@error&":"&@extended&@crlf)
 ; Open the User profile on the right side
-__TreeListExplorer_OpenPath($hTLESystemRight, @DesktopDir)
+;__TreeListExplorer_OpenPath($hTLESystemRight, @DesktopDir)
+__TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir)
 If @error Then ConsoleWrite("__TreeListExplorer_OpenPath failed: "&@error&":"&@extended&@crlf)
 
 Local $idButtonTest = GUICtrlCreateButton("Test", $iSpace, $iSpace)
@@ -76,7 +78,7 @@ while True
 		Exit
 	EndIf
 	If $iMsg=$idButtonTest Then
-		;__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
+		__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
 		__TreeListExplorer_Reload($hTLESystemLeft, True) ; reload folder in the right system
 		; __TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir, "Desktop")
 	EndIf

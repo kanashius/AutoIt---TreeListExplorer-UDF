@@ -15,7 +15,8 @@
 ; Language ......: English
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
-; Version .......: 2.9.0
+; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
+; Version .......: 2.9.1
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -301,7 +302,7 @@ EndFunc
 ;
 ;                  Errors:
 ;                  1 - $hSystem is not a valid TLE system
-;                  2 - $hView is not a (valid) control handle (@extended 50: Not a TreeView/ListView)
+;                  2 - $hView is not a (valid) control handle (@extended 50: Not a TreeView/ListView/Input)
 ;                  3 - $hView is already part of a TLE system
 ;                  4 - Parameter is invalid (@extended 1 - $bShowFolders, 2 - $bShowFiles, 3 - $sCallbackOnSelect,
 ;                      4 - $sCallbackOnDoubleClick, 5 - $sCallbackLoading, 6 - $iLineNumber)
@@ -855,15 +856,26 @@ Func __TreeListExplorer__UpdateView($hView)
 				Local $sPath = $mSystem.sFolder
 				Local $arPath = StringSplit($sPath, "\", BitOR(1, 2))
 				Local $hItem = _GUICtrlTreeView_GetFirstItem($hView)
+				Local $hItemBefore = $hItem
 				Local $iMaxIndex = UBound($arPath)-2
+				Local $sAbsPath = $mSystem.sRoot
 				; expand path and select last folder (if nothing in that folder is selected)
 				For $i=0 To $iMaxIndex Step 1 ; last is empty
 					$hItem = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
 					If $hItem = 0 Then ExitLoop
 					While _GUICtrlTreeView_GetText($hView, $hItem)<>$arPath[$i]
+						$hItemBefore = $hItem
 						$hItem = _GUICtrlTreeView_GetNextSibling($hView, $hItem)
 						If $hItem = 0 Then ExitLoop 2
 					WEnd
+					$sAbsPath&=_GUICtrlTreeView_GetText($hView, $hItem)&"\"
+					If Not __TreeListExplorer__PathIsFolder($sAbsPath) Then ; Handle folder being deleted
+						__TreeListExplorer__TreeViewDeleteItem($hView, $hItem)
+						_GUICtrlTreeView_EnsureVisible($hView, $hItemBefore)
+						_GUICtrlTreeView_SelectItem($hView, $hItemBefore)
+						$hItem = 0
+						ExitLoop
+					EndIf
 					If $i<>$iMaxIndex Then
 						__TreeListExplorer__ExpandTreeitem($hView, $hItem, $mSystem.bReloadAllFolders)
 					Else ; handle last item
@@ -1129,7 +1141,7 @@ Func __TreeListExplorer__UpdateTreeItemContent($hView, $hItem, $bRecursive = Fal
 	If _GUICtrlTreeView_GetImageIndex($hView, $hChild) = 10 And _GUICtrlTreeView_GetText($hView, $hChild)="HasChilds" Then
 		Local $hBefore = $hChild
 		$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
-		_GUICtrlTreeView_Delete($hView, $hBefore)
+		__TreeListExplorer__TreeViewDeleteItem($hView, $hBefore)
 	EndIf
 	; remove deleted items
 	While $hChild<>0
@@ -1143,7 +1155,7 @@ Func __TreeListExplorer__UpdateTreeItemContent($hView, $hItem, $bRecursive = Fal
 		Next
 		Local $hBefore = $hChild
 		$hChild = _GUICtrlTreeView_GetNextSibling($hView, $hChild)
-		If Not $bFound Then _GUICtrlTreeView_Delete($hView, $hBefore)
+		If Not $bFound Then __TreeListExplorer__TreeViewDeleteItem($hView, $hBefore)
 	WEnd
 	; add/insert/update
 	Local $hChild = _GUICtrlTreeView_GetFirstChild($hView, $hItem)
@@ -1177,6 +1189,27 @@ Func __TreeListExplorer__UpdateTreeItemContent($hView, $hItem, $bRecursive = Fal
 	Next
 	If Not $bRecursive Then __TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_LoadTree)
 	Return True
+EndFunc
+
+; #INTERNAL_USE_ONLY# ===========================================================================================================
+; Name ..........: __TreeListExplorer__TreeViewDeleteItem
+; Description ...: _GUICtrlTreeView_Delete randomly does not work using x64 AutoIt and sometimes randomly deletes controls
+;                  This is a fix to prevent that from happening.
+; Syntax ........: __TreeListExplorer__TreeViewDeleteItem($hView, $hItem)
+; Parameters ....: $hView               - the treeview handle.
+;                  $hItem               - the item handle.
+; Return values .: True on success
+; Author ........: Kanashius
+; Modified ......:
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: No
+; ===============================================================================================================================
+Func __TreeListExplorer__TreeViewDeleteItem($hView, $hItem)
+	If Not IsHWnd($hView) Then $hView = GUICtrlGetHandle($hView)
+	If Not IsPtr($hItem) Then $hItem = _GUICtrlTreeView_GetItemHandle($hView, $hItem)
+	Return _SendMessage($hView, $TVM_DELETEITEM, 0, $hItem, 0, "wparam", "handle", "hwnd") <> 0
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
