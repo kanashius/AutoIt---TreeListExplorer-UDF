@@ -13,6 +13,8 @@ Local $iTopLine = 100
 Local $iCtrlHeight = ($iHeight - $iTopLine)/2 - $iSpace*3, $iCtrlWidth = $iWidth/2 - $iSpace*3
 ; create left gui
 Local $iTop = $iSpace*2+$iTopLine, $iLeft = $iSpace
+Local $hInputPathRight = GUICtrlCreateInput("", $iLeft, $iTop-$iSpace-20, $iCtrlWidth, 20)
+; _GUICtrlEdit_SetReadOnly($hInputPathRight, True) ; If the Input should be readonly
 Local $hTreeViewLeft = GUICtrlCreateTreeView($iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
 $iTop+=$iCtrlHeight+$iSpace
 Local $hListViewLeft = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
@@ -33,13 +35,15 @@ Local $hListViewRight = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $i
 Local $hTLESystemLeft = __TreeListExplorer_CreateSystem($hGui)
 If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system
+__TreeListExplorer_AddView($hTLESystemLeft, $hInputPathRight)
+If @error Then ConsoleWrite("__TreeListExplorer_AddView $hInputPathRight failed: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemLeft, $hTreeViewLeft)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $hTreeView failed: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemLeft, $hListViewLeft)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $hListView failed: "&@error&":"&@extended&@crlf)
 
 ; Create TLE system for the right side
-Local $hTLESystemRight = __TreeListExplorer_CreateSystem($hGui, "", "_currentFolder", "_selectCallback")
+Local $hTLESystemRight = __TreeListExplorer_CreateSystem($hGui, "", "_currentFolderRight", "_selectCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system: ShowFolders=True, ShowFiles=True
 __TreeListExplorer_AddView($hTLESystemRight, $hTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
@@ -77,13 +81,14 @@ while True
 	EndIf
 WEnd
 
-Func _currentFolder($hSystem, $sRoot, $sFolder, $sSelected)
+Func _currentFolderRight($hSystem, $sRoot, $sFolder, $sSelected)
 	GUICtrlSetData($hLabelCurrentFolderRight, $sRoot&$sFolder&"["&$sSelected&"]")
 	; ConsoleWrite("Folder "&$hSystem&": "&$sRoot&$sFolder&"["&$sSelected&"]"&@CRLF)
 EndFunc
 
 Func _selectCallback($hSystem, $sRoot, $sFolder, $sSelected)
 	GUICtrlSetData($hLabelSelectRight, $sRoot&$sFolder&"["&$sSelected&"]")
+	__TreeListExplorer__FileGetIconIndex($sRoot&$sFolder&$sSelected)
 	; ConsoleWrite("Select "&$hSystem&": "&$sRoot&$sFolder&"["&$sSelected&"]"&@CRLF)
 EndFunc
 
