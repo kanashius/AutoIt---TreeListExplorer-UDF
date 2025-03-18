@@ -10,6 +10,7 @@
 #include <WindowsConstants.au3>
 #include <GDIPlus.au3>
 #include <WinAPIShellEx.au3>
+#Include <WinAPIReg.au3>
 
 ; #INDEX# =======================================================================================================================
 ; Title .........: TreeListExplorer
@@ -18,7 +19,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.9.3
+; Version .......: 2.9.4
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -1072,7 +1073,7 @@ Func __TreeListExplorer__FileGetIconIndex($sPath)
 	If @error Or UBound($arExt)<>1 Then Return 2 ; Default file icon
 	Local $sExt = StringLower($arExt[0])
 	If MapExists($__TreeListExplorer__Data.mIcons, $sExt) Then Return $__TreeListExplorer__Data.mIcons[$sExt]
-	If MapExists($__TreeListExplorer__Data.mIcons, $sPath) Then Return $__TreeListExplorer__Data.mIcons[$sExt]
+	If MapExists($__TreeListExplorer__Data.mIcons, $sPath) Then Return $__TreeListExplorer__Data.mIcons[$sPath]
 
 	Local $sIconPath = -1, $iIconIndex = 0, $bAddForExtension = False
 	; handle .url (links)
@@ -1109,6 +1110,7 @@ Func __TreeListExplorer__FileGetIconIndex($sPath)
 			EndIf
 		EndIf
 		If $sRegData<>"" Then $sRegData = RegRead("HKCR\" & $sRegData & "\DefaultIcon", "")
+		If $sRegData="" Then $sRegData = _WinAPI_AssocQueryString($sExt, $ASSOCSTR_DEFAULTICON)
 		If StringInStr($sRegData, "@")=1 Then ; Handle urls with @{...}
 			Local $sIconPath = _WinAPI_LoadIndirectString($sRegData)
 			If @error Then $sIconPath = -1
@@ -1154,9 +1156,7 @@ Func __TreeListExplorer__FileGetIconIndex($sPath)
 		Local $tSHFILEINFO = DllStructCreate($tagSHFILEINFO)
 		Local $dwFlags = BitOR($SHGFI_USEFILEATTRIBUTES, $SHGFI_ICON, $SHGFI_ICONLOCATION)
 		_WinAPI_ShellGetFileInfo($sPath, $dwFlags, $FILE_ATTRIBUTE_NORMAL, $tSHFILEINFO)
-		;ConsoleWrite("---------"&$sPath&"--------"&@crlf)
 		If DllStructGetData($tSHFILEINFO, 2)<>0 Then ; ignore missing icons (SystemIcon=0 equals Default file icon)
-			;_ToStringC($tSHFILEINFO)
 			If DllStructGetData($tSHFILEINFO, 1)>0 Then
 				Local $iIndex = _GUIImageList_ReplaceIcon($__TreeListExplorer__Data.hIconList, -1, DllStructGetData($tSHFILEINFO, 1))
 				If $iIndex>=0 Then

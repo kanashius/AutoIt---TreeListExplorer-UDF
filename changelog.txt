@@ -55,3 +55,6 @@ Version 2.9.2
 - Improved fileicon support. Should support pretty much any file.
 Version 2.9.3
 - Fixed custom icon size when extracting icons
+Version 2.9.4
+- Improved display quality for some icons (Thanks WildByDesign for the work on that)
+- Fixed an issue, where cached file icons for individual files were shown as a folder
