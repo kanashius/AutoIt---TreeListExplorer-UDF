@@ -53,3 +53,5 @@ Version 2.9.1
 - Workaround for a Bug in the GuiTreeView UDF (until it is fixed), causing random control deletions instead of TreeView item deletions
 Version 2.9.2
 - Improved fileicon support. Should support pretty much any file.
+Version 2.9.3
+- Fixed custom icon size when extracting icons
