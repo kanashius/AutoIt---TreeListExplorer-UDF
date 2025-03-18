@@ -18,7 +18,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.9.2
+; Version .......: 2.9.3
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -1127,7 +1127,8 @@ Func __TreeListExplorer__FileGetIconIndex($sPath)
 		Local $sIconExt = StringRight($sIconPath, 4), $sMapKey = $sPath
 		If $bAddForExtension Then $sMapKey = $sExt
 		If $sIconExt=".dll" Or $sIconExt=".exe" Or $sIconExt=".ico" Then ; icon to extract
-			Local $hIcon = _WinAPI_ExtractIcon($sIconPath, $iIconIndex, True)
+			Local $iIconSize = $__TreeListExplorer__Data.iIconSize
+			Local $hIcon = _WinAPI_ShellExtractIcon($sIconPath, $iIconIndex, $iIconSize, $iIconSize)
 			If $hIcon<>0 Then
 				Local $iIndex = _GUIImageList_ReplaceIcon($__TreeListExplorer__Data.hIconList, -1, $hIcon)
 				If $iIndex>=0 Then
