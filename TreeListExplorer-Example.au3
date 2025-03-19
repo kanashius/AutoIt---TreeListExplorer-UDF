@@ -1,6 +1,7 @@
 ; #AutoIt3Wrapper_UseX64=Y
 #include "TreeListExplorer.au3"
 #include <GuiTreeView.au3>
+#include "ToString.au3"
 
 Global $iWidth = 1600, $iHeight = 1000, $iSpace = 5
 
@@ -56,8 +57,8 @@ If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewRight failed:
 __TreeListExplorer_SetRoot($hTLESystemRight, "C:\Users")
 If @error Then ConsoleWrite("__TreeListExplorer_SetRoot failed: "&@error&":"&@extended&@crlf)
 ; Open the User profile on the right side
-;__TreeListExplorer_OpenPath($hTLESystemRight, @DesktopDir)
-__TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir)
+__TreeListExplorer_OpenPath($hTLESystemRight, @DesktopDir)
+;__TreeListExplorer_OpenPath($hTLESystemRight, @UserProfileDir)
 If @error Then ConsoleWrite("__TreeListExplorer_OpenPath failed: "&@error&":"&@extended&@crlf)
 
 Local $idButtonTest = GUICtrlCreateButton("Test", $iSpace, $iSpace)

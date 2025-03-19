@@ -19,7 +19,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.9.4
+; Version .......: 2.9.5
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -1114,6 +1114,29 @@ Func __TreeListExplorer__FileGetIconIndex($sPath)
 		If StringInStr($sRegData, "@")=1 Then ; Handle urls with @{...}
 			Local $sIconPath = _WinAPI_LoadIndirectString($sRegData)
 			If @error Then $sIconPath = -1
+			Local $arRes = StringRegExp($sIconPath, "^(.*\\)(.*-)(\d+)(\.\S+)$", 1)
+			If Not (@error And UBound($arRes)<>4) Then ; check for files with a pixel resolution closer to $iIconSize
+				Local $iIconSize = $__TreeListExplorer__Data.iIconSize
+				Local $arFiles = _FileListToArray($arRes[0], $arRes[1]&"*"&$arRes[3])
+				Local $arOptions[UBound($arFiles)-1][2], $iCount = 0
+				For $i=1 To UBound($arFiles)-1 Step 1 ; get icon size for all files
+					Local $arFileParts = StringRegExp($arFiles[$i], "^.*-(\d+)\.\S+$", 1)
+					If Not @error Then
+						$arOptions[$iCount][0] = Int($arFileParts[0])
+						$arOptions[$iCount][1] = $arFiles[$i]
+						$iCount+=1
+					EndIf
+				Next
+				ReDim $arOptions[$iCount][2]
+				_ArraySort($arOptions) ; sort by size
+				For $i=0 To UBound($arOptions)-1 Step 1 ; take the best icon to be used (>= target icon size); Resize will be done later
+					If $iIconSize<=$arOptions[$i][0] Then
+						$sIconPath = $arRes[0]&$arOptions[$i][1]
+						ConsoleWrite("File: "&$sPath&" >> Target: "&$sIconPath&@crlf)
+						ExitLoop
+					EndIf
+				Next
+			EndIf
 		ElseIf StringInStr($sRegData, ",") Then ; Handle <Path>, <iIndex> e.g.:  ...shell32.dll, 0
 			Local $arParts = StringRegExp($sRegData, '"?(.*?)"?,(-?\d+)', 1)
 			If UBound($arParts)=2 Then
