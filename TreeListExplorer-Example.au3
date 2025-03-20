@@ -1,7 +1,6 @@
 ; #AutoIt3Wrapper_UseX64=Y
 #include "TreeListExplorer.au3"
 #include <GuiTreeView.au3>
-#include "ToString.au3"
 
 Global $iWidth = 1600, $iHeight = 1000, $iSpace = 5
 
@@ -50,7 +49,7 @@ If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem right failed: "&@er
 ; Add Views to TLE system: ShowFolders=True, ShowFiles=True
 __TreeListExplorer_AddView($hTLESystemRight, $idTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewRight failed 2: "&@error&":"&@extended&@crlf)
-__TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
+__TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback", "_filterCallback", False)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewRight failed: "&@error&":"&@extended&@crlf)
 
 ; Set the root directory for the right side to the users directory
@@ -105,6 +104,11 @@ EndFunc
 
 Func _doubleClickCallback($hSystem, $hView, $sRoot, $sFolder, $sSelected, $item)
 	ConsoleWrite("Double click at "&$hView&": "&$sRoot&$sFolder&"["&$sSelected&"] :"&$item&@CRLF)
+EndFunc
+
+Func _filterCallback($hSystem, $hView, $bIsFolder, $sPath, $sName, $sExt)
+	; ConsoleWrite("Filter: "&$hSystem&" > "&$hView&" -- Folder: "&$bIsFolder&" Path: "&$sPath&" Filename: "&$sName&" Ext: "&$sExt&@crlf)
+	Return $bIsFolder Or $sExt=".au3"
 EndFunc
 
 Func _loadingCallback($hSystem, $hView, $sRoot, $sFolder, $sSelected, $sPath, $bLoading)

@@ -60,3 +60,6 @@ Version 2.9.4
 - Fixed an issue, where cached file icons for individual files were shown as a folder
 Version 2.9.5
 - Improved display quality for some icons (When resource files are defined in the registry, the one with the size greater or equal to the required icon size will be choosen)
+Version 2.10.0
+- Added the possibility to filter ListViews/TreeViews with a callback function. This callbackfunction is called for every file/folder and only if it returns True, will they be added to the view.
+- Added the possibility to set $bNavigate for ListViews when adding them. This enables or disables the possibility to navigate through folders with doubleclicks in a ListView (and add/removes the ".." folder at the top, which enables the user to navigate to the parent folder)
