@@ -63,3 +63,7 @@ Version 2.9.5
 Version 2.10.0
 - Added the possibility to filter ListViews/TreeViews with a callback function. This callbackfunction is called for every file/folder and only if it returns True, will they be added to the view.
 - Added the possibility to set $bNavigate for ListViews when adding them. This enables or disables the possibility to navigate through folders with doubleclicks in a ListView (and add/removes the ".." folder at the top, which enables the user to navigate to the parent folder)
+Version 2.10.1
+- Added the WinAPIConstants.au3 include to fix missing constants due to changes with the new AutoIt-Version (v3.3.18.0)
+Version 2.10.2
+- Fixed a bug using _GUICtrlListView_AddItem ($iParam)

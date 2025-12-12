@@ -11,15 +11,16 @@
 #include <GDIPlus.au3>
 #include <WinAPIShellEx.au3>
 #Include <WinAPIReg.au3>
+#include <WinAPIConstants.au3>
 
 ; #INDEX# =======================================================================================================================
 ; Title .........: TreeListExplorer
-; AutoIt Version : 3.3.16.1
+; AutoIt Version : 3.3.18.1
 ; Language ......: English
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.10.0
+; Version .......: 2.10.2
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -964,7 +965,7 @@ Func __TreeListExplorer__UpdateView($hView)
 					_GUICtrlListView_DeleteAllItems($hView)
 					; do not display .. folder in root directory
 					If $mSystem.sFolder<>"" And $mView.bNavigation Then
-						_GUICtrlListView_AddItem($hView, "..", 0, 0)
+						_GUICtrlListView_AddItem($hView, "..", 0)
 					EndIf
 					Local $sPath = $mSystem.sRoot & $mSystem.sFolder
 					If $sPath = "" Then ; list drives at root level
@@ -977,12 +978,12 @@ Func __TreeListExplorer__UpdateView($hView)
 							Local $arFolders = _FileListToArray($sPath, "*", 2)
 							For $i=1 To UBound($arFolders)-1 Step 1
 								If $mView.sCallbackFilter=Default Then
-									Local $iIndex = _GUICtrlListView_AddItem($hView, $arFolders[$i], 0, 0)
+									Local $iIndex = _GUICtrlListView_AddItem($hView, $arFolders[$i], 0)
 									_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString($sPath & $arFolders[$i]), 2)
 								Else
 									; __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", $bIsFolder, $sPath, $sName, $sExt)
 									If __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", True, $sPath, $arFolders[$i], "") Then
-										Local $iIndex = _GUICtrlListView_AddItem($hView, $arFolders[$i], 0, 0)
+										Local $iIndex = _GUICtrlListView_AddItem($hView, $arFolders[$i], 0)
 										_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString($sPath & $arFolders[$i]), 2)
 									EndIf
 								EndIf
@@ -994,7 +995,7 @@ Func __TreeListExplorer__UpdateView($hView)
 								If $mView.sCallbackFilter=Default Then
 									Local $sFilePath = $sPath & $arFiles[$i]
 									Local $iIconIndex = __TreeListExplorer__FileGetIconIndex($sFilePath)
-									Local $iIndex = _GUICtrlListView_AddItem($hView, $arFiles[$i], $iIconIndex, $iIconIndex)
+									Local $iIndex = _GUICtrlListView_AddItem($hView, $arFiles[$i], $iIconIndex)
 									_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetSizeString($sFilePath), 1)
 									_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString($sFilePath), 2)
 								Else
@@ -1007,7 +1008,7 @@ Func __TreeListExplorer__UpdateView($hView)
 									If __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", False, $sPath, $sFilename, $sExt) Then
 										Local $sFilePath = $sPath & $arFiles[$i]
 										Local $iIconIndex = __TreeListExplorer__FileGetIconIndex($sFilePath)
-										Local $iIndex = _GUICtrlListView_AddItem($hView, $arFiles[$i], $iIconIndex, $iIconIndex)
+										Local $iIndex = _GUICtrlListView_AddItem($hView, $arFiles[$i], $iIconIndex)
 										_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetSizeString($sFilePath), 1)
 										_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString($sFilePath), 2)
 									EndIf
