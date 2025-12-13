@@ -67,3 +67,5 @@ Version 2.10.1
 - Added the WinAPIConstants.au3 include to fix missing constants due to changes with the new AutoIt-Version (v3.3.18.0)
 Version 2.10.2
 - Fixed a bug using _GUICtrlListView_AddItem ($iParam)
+Version 2.10.3
+- Fixed missed _GUICtrlListView_AddItem call in v2.10.2

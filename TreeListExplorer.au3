@@ -20,7 +20,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.10.2
+; Version .......: 2.10.3
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -971,7 +971,7 @@ Func __TreeListExplorer__UpdateView($hView)
 					If $sPath = "" Then ; list drives at root level
 						Local $arDrives = __TreeListExplorer__GetDrives()
 						For $i=0 To UBound($arDrives)-1 Step 1
-							_GUICtrlListView_AddItem($hView, StringUpper($arDrives[$i][0]), $arDrives[$i][1], $arDrives[$i][1])
+							_GUICtrlListView_AddItem($hView, StringUpper($arDrives[$i][0]), $arDrives[$i][1])
 						Next
 					Else
 						If $mView.bShowFolders Then
@@ -1746,10 +1746,9 @@ EndFunc
 ; ===============================================================================================================================
 Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
     If $iMsg=$WM_NOTIFY Then
-		Local $hView, $iIDFrom, $iCode, $tNMHDR
+		Local $hView, $iCode, $tNMHDR
 		$tNMHDR = DllStructCreate($tagNMHDR, $ilParam)
 		$hView = HWnd(DllStructGetData($tNMHDR, "hWndFrom"))
-		$iIDFrom = DllStructGetData($tNMHDR, "IDFrom")
 		$iCode = DllStructGetData($tNMHDR, "Code")
 		Local $arHwnds = MapKeys($__TreeListExplorer__Data.mViews)
 		For $i=0 To UBound($arHwnds)-1 Step 1
@@ -1836,7 +1835,6 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 									If $iCode=$NM_CLICK Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", $iIndex)
 								EndIf
 							EndIf
-							If $NM_CLICK Then Return 1 ; required, otherwise some events are sent, where the icon index is the event id => random GuiGetMsg events triggered
 						Case $NM_DBLCLK
 							__TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
 							Local $iIndex = _GUICtrlListView_GetSelectionMark($hView)
