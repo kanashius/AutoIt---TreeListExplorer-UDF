@@ -69,3 +69,9 @@ Version 2.10.2
 - Fixed a bug using _GUICtrlListView_AddItem ($iParam)
 Version 2.10.3
 - Fixed missed _GUICtrlListView_AddItem call in v2.10.2
+Version 2.11.0
+- Allow multiselect with CTRL+Click, SHIFT+Click and CTRL+A
+- Allow the removal of the ".." go to parent folder listviewitem without disabling navigation
+- Fix a bug, where the doubleclick on a folder does not open it, when that requires another view to be changed first (which surpresses the $NM_DBLCLICK event in _winProc)
+- Enable the usage of custom columns. The first column must be the file/folder/drive name, all others can be adjusted (and filled with a callback function)
+- Smaller fixes

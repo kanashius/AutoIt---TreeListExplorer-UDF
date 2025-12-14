@@ -18,7 +18,9 @@ Local $idInputPathRight = GUICtrlCreateInput("", $iLeft, $iTop-$iSpace-20, $iCtr
 ; _GUICtrlEdit_SetReadOnly($idInputPathRight, True) ; If the Input should be readonly
 Local $idTreeViewLeft = GUICtrlCreateTreeView($iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
 $iTop+=$iCtrlHeight+$iSpace
-Local $idListViewLeft = GUICtrlCreateListView("", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
+Local $idListViewLeft = GUICtrlCreateListView("Filename|Modified", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
+_GUICtrlListView_SetColumnWidth($idListViewLeft, 0, _WinAPI_GetWindowWidth(GUICtrlGetHandle($idListViewLeft))-125)
+_GUICtrlListView_SetColumnWidth($idListViewLeft, 1, 120)
 ; create right gui
 Local $iLeft = $iSpace*2 + $iCtrlWidth
 Local $iTop = $iSpace
@@ -40,7 +42,7 @@ __TreeListExplorer_AddView($hTLESystemLeft, $idInputPathRight)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idInputPathRight failed: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemLeft, $idTreeViewLeft)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewLeft failed: "&@error&":"&@extended&@crlf)
-__TreeListExplorer_AddView($hTLESystemLeft, $idListViewLeft)
+__TreeListExplorer_AddView($hTLESystemLeft, $idListViewLeft, Default, Default, Default, Default, Default, Default, "_handleCustomColumns")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewLeft failed: "&@error&":"&@extended&@crlf)
 
 ; Create TLE system for the right side
@@ -49,7 +51,7 @@ If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem right failed: "&@er
 ; Add Views to TLE system: ShowFolders=True, ShowFiles=True
 __TreeListExplorer_AddView($hTLESystemRight, $idTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewRight failed 2: "&@error&":"&@extended&@crlf)
-__TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback", "_filterCallback", False)
+__TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback", "_filterCallback", Default, False)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewRight failed: "&@error&":"&@extended&@crlf)
 
 ; Set the root directory for the right side to the users directory
@@ -82,6 +84,12 @@ while True
 		__TreeListExplorer_Reload($hTLESystemLeft, True) ; reload folder in the right system
 	EndIf
 WEnd
+
+Func _handleCustomColumns($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder)
+	If StringRight($sFilename, 1)<>":" Then ; do not for drives
+		_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString(FileGetTime($sPath, 0)), 1)
+	EndIf
+EndFunc
 
 Func _currentFolderRight($hSystem, $sRoot, $sFolder, $sSelected)
 	GUICtrlSetData($idLabelCurrentFolderRight, $sRoot&$sFolder&"["&$sSelected&"]")
