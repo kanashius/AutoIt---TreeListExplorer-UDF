@@ -75,3 +75,5 @@ Version 2.11.0
 - Fix a bug, where the doubleclick on a folder does not open it, when that requires another view to be changed first (which surpresses the $NM_DBLCLICK event in _winProc)
 - Enable the usage of custom columns. The first column must be the file/folder/drive name, all others can be adjusted (and filled with a callback function)
 - Smaller fixes
+Version 2.11.1
+- Fix $arDoubleClickTime not being a local variable

@@ -20,7 +20,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.10.3
+; Version .......: 2.11.1
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -118,8 +118,9 @@ Func __TreeListExplorer_StartUp($iLang = $__TreeListExplorer_Lang_EN, $iIconSize
 	If Not IsInt($iLang) Or $iLang<0 Or $iLang>UBound($arLangData)-1 Then Return SetError(1, 1, False)
 	If Not IsInt($iIconSize) Or $iIconSize<0 Then Return SetError(1, 2, False)
 
-	$arDoubleClickTime = DllCall('user32.dll', 'uint', 'GetDoubleClickTime')
-	$__TreeListExplorer__Data.iDoubleClickTime = $arDoubleClickTime[0]
+	$__TreeListExplorer__Data.iDoubleClickTime = 500
+	Local $arDoubleClickTime = DllCall('user32.dll', 'uint', 'GetDoubleClickTime')
+	If Not @error And UBound($arDoubleClickTime)>0 And IsInt($arDoubleClickTime[0]) Then $__TreeListExplorer__Data.iDoubleClickTime = $arDoubleClickTime[0]
 	$__TreeListExplorer__Data.iIconSize = $iIconSize
 	_GDIPlus_Startup()
 	Local $hImageList = _GUIImageList_Create($iIconSize, $iIconSize, 5, 1)
