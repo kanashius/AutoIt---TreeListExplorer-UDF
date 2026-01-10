@@ -20,7 +20,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.11.1
+; Version .......: 2.12
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -30,6 +30,7 @@
 ; __TreeListExplorer_CreateSystem
 ; __TreeListExplorer_DeleteSystem
 ; __TreeListExplorer_AddView
+; __TreeListExplorer_SetCallback
 ; __TreeListExplorer_RemoveView
 ; __TreeListExplorer_OpenPath
 ; __TreeListExplorer_Reload
@@ -50,7 +51,7 @@
 ; __TreeListExplorer__GetHandleFromSystemID
 ; __TreeListExplorer__UpdateSystemViews
 ; __TreeListExplorer__UpdateView
-; __TreeListExplorer__ListViewItemCreated
+; __TreeListExplorer__ListViewPathHandler
 ; __TreeListExplorer__GetSizeString
 ; __TreeListExplorer__GetTimeString
 ; __TreeListExplorer__FileGetIconIndex
@@ -59,6 +60,7 @@
 ; __TreeListExplorer__GetTreeViewItemDepth
 ; __TreeListExplorer__UpdateTreeItemExpandable
 ; __TreeListExplorer__GetDrives
+; __TreeListExplorer__GetDriveIconId
 ; __TreeListExplorer__UpdateTreeViewSelection
 ; __TreeListExplorer__TreeViewGetRelPath
 ; __TreeListExplorer__IsViewUpdating
@@ -78,7 +80,17 @@
 ; ===============================================================================================================================
 
 ; #GLOBAL CONSTANTS# ============================================================================================================
-Global $__TreeListExplorer_Lang_EN = 0, $__TreeListExplorer_Lang_DE = 1
+; Languages
+Global $__TreeListExplorer_Lang_EN = 0
+Global $__TreeListExplorer_Lang_DE = 1
+
+; Callback types
+Global $__TreeListExplorer_Callback_Click = 1
+Global $__TreeListExplorer_Callback_DoubleClick = 2
+Global $__TreeListExplorer_Callback_Loading = 4
+Global $__TreeListExplorer_Callback_Filter = 8
+Global $__TreeListExplorer_Callback_ListViewItemCreated = 16
+Global $__TreeListExplorer_Callback_ListViewPaths = 32
 ; ===============================================================================================================================
 
 ; #INTERNAL_USE_ONLY GLOBAL CONSTANTS # =========================================================================================
@@ -231,13 +243,16 @@ EndFunc
 ; Return values .: The system handle $hSystem, used by the other functions
 ; Author ........: Kanashius
 ; Modified ......:
-; Remarks .......: When $sRootFolder = "", there is no root directory, enabling all drives to be accessed. Otherwise the User can
+; Remarks .......: When $sRootFolder = Default, there is no root directory, enabling all drives to be accessed. Otherwise the User can
 ;                  only select child folders of the root folder.
+;
 ;                  The $sCallbackFolder calls the provided function, which must have 4 parameters ($hSystem, $sRoot, $sFolder, $sSelected) and
 ;                  is called, when the root folder or the current folder changes. If the parameter number is wrong an error
 ;                  message will be written to the console at runtime (using $iLineNumber to find it better).
+;
 ;                  $sCallbackSelect must be a function with 4 parameters ($hSystem, $sRoot, $sFolder, $sSelected)
 ;                  and is called, when an item in the Tree-/ListView is selected (Mouse/Keyboard)
+;
 ;                  If $iMaxDepth is set, it is not possible to go deeper then that depth (Example: Drive selection with $sRoot="" and $iMaxDepth=0).
 ;                  ListViews are not limited by $iMaxDepth.
 ;
@@ -251,7 +266,7 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = "", $sCallbackFolder = Default, $sCallbackSelect = Default, $iMaxDepth = Default, $iLineNumber = @ScriptLineNumber)
+Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = Default, $sCallbackFolder = Default, $sCallbackSelect = Default, $iMaxDepth = Default, $iLineNumber = @ScriptLineNumber)
 	If Not IsHWnd($hGui) Then Return SetError(1, 1, -1)
 	If $sCallbackFolder <> Default And Not IsFunc(Execute($sCallbackFolder)) Then Return SetError(1, 3, -1)
 	If $sCallbackSelect <> Default And Not IsFunc(Execute($sCallbackSelect)) Then Return SetError(1, 4, -1)
@@ -292,7 +307,7 @@ Func __TreeListExplorer_CreateSystem($hGui, $sRootFolder = "", $sCallbackFolder 
 		__TreeListExplorer__DeleteSystem($iSystem)
 		Return SetError(4, 0, -1)
 	EndIf
-	If $sRootFolder<>"" Then
+	If $sRootFolder<>Default Then
 		__TreeListExplorer_SetRoot($hSystem, $sRootFolder)
 		If @error Then
 			__TreeListExplorer_DeleteSystem($hSystem)
@@ -325,59 +340,38 @@ EndFunc
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: __TreeListExplorer_AddView
 ; Description ...: Add a view (TreeView/ListView) to a TLE system.
-; Syntax ........: __TreeListExplorer_AddView($hSystem, $hView[, $bShowFolders = Default[, $bShowFiles = Default[, $sCallbackOnSelect = Default
-;                  [,$sCallbackOnDoubleClick = Default[, $sCallbackLoading = Default[, $sCallbackFilter = Default[, $bNavigation = True
-;                  [, $iLineNumber = @ScriptLineNumber]]]]]]])
+; Syntax ........: __TreeListExplorer_AddView($hSystem, $hView, [$bShowFolders = Default, [$bShowFiles = Default, [$bNavigation = True, [$bListViewFolderUp = True, [$iLineNumber = @ScriptLineNumber]]]]])
 ; Parameters ....: $hSystem             - the system handle.
 ;                  $hView               - the view to add (must be a TreeView or ListView).
-;                  $bShowFolders        - [optional] a boolean defining, if folders will be shown in the view. Default is Default.
-;                  $bShowFiles          - [optional] a boolean defining, if files will be shown in the view. Default is Default.
-;                  $sCallbackClick      - [optional] callback function as string. Using Default will not call any function.
-;                  $sCallbackDblClick - [optional] callback function as string. Using Default will not call any function.
-;                  $sCallbackLoading    - [optional] callback function as string. Using Default will not call any function.
-;                  $sCallbackFilter     - [optional] callback function as string. Using Default will not call any function.
-;                  $sCallbackLVItem     - [optional] callback function as string. Using Default will not call any function. (ListViews only)
+;                  $bShowFolders        - [optional] a boolean defining, if folders will be shown in the view. Default depends on the view type (see remarks).
+;                  $bShowFiles          - [optional] a boolean defining, if files will be shown in the view. Default depends on the view type (see remarks).
 ;                  $bNavigation         - [optional] boolean. Default is True. If False, the view cannot be used to navigate folders. (ListViews only)
 ;                  $bListViewFolderUp   - [optional] boolean. Default is True. If False, the view wil not have the ".." folder at the top to go to the parent directory. (ListViews only)
-;                  $iLineNumber         - [optional] an integer value. Default is @ScriptLineNumber.
+;                  $bLVDefaultColumns   - [optional] boolean. Default is True. If True, the default columns for the listview will be created. (ListViews only)
+;                  $bEnableSorting      - [optional] boolean. Default is True. If True, simple sorting is enabled for the ListView, where clicking at the header sorts by that column. (ListViews only)
+;                  $iLineNumber         - [optional] an integer value. Default is @ScriptLineNumber. (should not be changed)
 ; Return values .: True on success
 ; Author ........: Kanashius
 ; Modified ......:
-; Remarks .......: Default for $bShowFolders is True for TreeViews and ListViews.
+; Remarks .......: Default for $bShowFolders is True for TreeViews and ListViews, False for Inputs.
 ;
-;                  Default for $bShowFiles is True for ListViews and False for TreeViews.
+;                  Default for $bShowFiles is True for ListViews and False for TreeViews and Inputs.
 ;
-;                  $sCallbackClick must be a function with 6 parameters ($hSystem, $hView, $sRoot, $sFolder, $sSelected, $iIndex (ListView)/$hItem (TreeView))
-;                  and is called, when an element in the view is clicked once.
+;                  Additional functionality can be accomplished using callbacks (click detection/handle loading/filtering/custom columns/sorting/...).
+;                  See __TreeListExplorer_SetCallback for further information.
 ;
-;                  $sCallbackDoubleClick must be a function with 6 parameters ($hSystem, $hView, $sRoot, $sFolder, $sSelected, $iIndex (ListView)/$hItem (TreeView))
-;                  and is called, when an element in the view is double clicked.
-;
-;                  $sCallbackLoading must be a function with 7 parameters ($hSystem, $hView, $sRoot, $sFolder, $sSelected, $sLoadingFolder, $bLoading)
-;                  and is called, when a some folders or files are loading (when root/folder changes or an element in a
-;                  TreeView is extended). $bLoading is True if loading starts and False, when it is done. $sLoadingFolder is relative
-;                  to $sRoot and may be different then $sFolder, when the user is expanding a folder manually.
-;
-;                  $sCallbackFilter must be a function with 6 parameters ($hSystem, $hView, $bIsFolder, $sPath, $sName, $sExt) and is called to check, if a
-;                  folder/file should be shown in the view. It must return True, if a folder/file should be shown and False, if it should be filtered.
-;                  $bIsFolder is True for folders/drives and False for files. $sPath is the parent folder, the folder/file to be checked is in.
-;                  $sName is the folder/filename without the extension and $sExt is the extension.
-;
-;                  $sCallbackLVItem must be a function with 6 parameters ($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder) and is called for every ListView item created to enable custom columns.
-;                  $sPath contains the Folder/File path, $iIndex the index of the created listview item and $bFolder is true, if an item for a folder/drive was created and is false for files.
+;                  $bEnableSorting only allows for simple sorting. To sort by yourself, you can use the $__TreeListExplorer_Callback_ListViewPaths callback (see __TreeListExplorer_SetCallback).
 ;
 ;                  Errors:
 ;                  1 - $hSystem is not a valid TLE system
 ;                  2 - $hView is not a (valid) control handle (@extended 50: Not a TreeView/ListView/Input)
 ;                  3 - $hView is already part of a TLE system
-;                  4 - Parameter is invalid (@extended 1 - $bShowFolders, 2 - $bShowFiles, 3 - $sCallbackOnSelect,
-;                      4 - $sCallbackOnDoubleClick, 5 - $sCallbackLoading, 6 - $sCallbackFilter, 7 - $bNavigation,
-;                      8 - $bListViewFolderUp, 9 - $iLineNumber, 10 - $sCallbackListViewItemCreated)
+;                  4 - Parameter is invalid (@extended 1 - $bShowFolders, 2 - $bShowFiles, 3 - $bNavigation, 4 - $bListViewFolderUp, 5 - $bEnableSorting, 6 - $iLineNumber)
 ; Related .......:
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer_AddView($hSystem, $hView, $bShowFolders = Default, $bShowFiles = Default, $sCallbackClick = Default, $sCallbackDblClick = Default, $sCallbackLoading = Default, $sCallbackFilter = Default, $sCallbackLVItem = Default, $bNavigation = True, $bListViewFolderUp = True, $iLineNumber = @ScriptLineNumber)
+Func __TreeListExplorer_AddView($hSystem, $hView, $bShowFolders = Default, $bShowFiles = Default, $bNavigation = Default, $bListViewFolderUp = Default, $bLVDefaultColumns = Default, $bEnableSorting = Default, $iLineNumber = @ScriptLineNumber)
 	Local $iSystem = __TreeListExplorer__GetSystemIDFromHandle($hSystem)
 	If @error Then Return SetError(1, @error, False) ; $iSystem not valid/startup not called
 	If Not IsHWnd($hView) Then
@@ -398,14 +392,14 @@ Func __TreeListExplorer_AddView($hSystem, $hView, $bShowFolders = Default, $bSho
 	EndIf
 	If $bShowFolders <> Default And Not IsBool($bShowFolders) Then Return SetError(4, 1, False)
 	If $bShowFiles <> Default And Not IsBool($bShowFiles) Then Return SetError(4, 2, False)
-	If $sCallbackClick <> Default And Not IsFunc(Execute($sCallbackClick)) Then Return SetError(4, 3, False)
-	If $sCallbackDblClick <> Default And Not IsFunc(Execute($sCallbackDblClick)) Then Return SetError(4, 4, False)
-	If $sCallbackLoading <> Default And Not IsFunc(Execute($sCallbackLoading)) Then Return SetError(4, 5, False)
-	If $sCallbackFilter <> Default And Not IsFunc(Execute($sCallbackFilter)) Then Return SetError(4, 6, False)
-	If $sCallbackLVItem <> Default And Not IsFunc(Execute($sCallbackLVItem)) Then Return SetError(4, 10, False)
-	If Not IsBool($bNavigation) Then Return SetError(4, 7, False)
-	If Not IsBool($bListViewFolderUp) Then Return SetError(4, 8, False)
-	If Not IsInt($iLineNumber) Then Return SetError(4, 9, False)
+	If $bNavigation = Default Then $bNavigation = True
+	If $bListViewFolderUp = Default Then $bListViewFolderUp = True
+	If $bLVDefaultColumns = Default Then $bLVDefaultColumns = True
+	If $bEnableSorting = Default Then $bEnableSorting = True
+	If Not IsBool($bNavigation) Then Return SetError(4, 3, False)
+	If Not IsBool($bListViewFolderUp) Then Return SetError(4, 4, False)
+	If Not IsBool($bEnableSorting) Then Return SetError(4, 5, False)
+	If Not IsInt($iLineNumber) Then Return SetError(4, 6, False)
 	Switch $iType
 		Case $__TreeListExplorer__Type_TreeView
 			If $bShowFolders = Default Then $bShowFolders=True
@@ -415,10 +409,9 @@ Func __TreeListExplorer_AddView($hSystem, $hView, $bShowFolders = Default, $bSho
 			If $bShowFolders = Default Then $bShowFolders=True
 			If $bShowFiles = Default Then $bShowFiles=True
 			_GUICtrlListView_SetImageList($hView, $__TreeListExplorer__Data.hIconList, 1)
-			_GUICtrlListView_SetExtendedListViewStyle($hView, BitOR( $LVS_EX_FULLROWSELECT, $LVS_EX_SUBITEMIMAGES))
-			GUICtrlSetStyle($hView, BitOR($LVS_SHOWSELALWAYS, $LVS_NOSORTHEADER, $LVS_REPORT))
+			_GUICtrlListView_SetExtendedListViewStyle($hView, BitOR($LVS_EX_FULLROWSELECT, $LVS_EX_SUBITEMIMAGES))
 			Local $iListWidth = _WinAPI_GetWindowWidth($hView)
-			If $sCallbackLVItem=Default Then
+			If $bLVDefaultColumns Then
 				For $i=0 To _GUICtrlListView_GetColumnCount($hView)+1 Step 1
 					_GUICtrlListView_DeleteColumn($hView, 0)
 				Next
@@ -427,10 +420,6 @@ Func __TreeListExplorer_AddView($hSystem, $hView, $bShowFolders = Default, $bSho
 				_GUICtrlListView_AddColumn($hView, $__TreeListExplorer__Data.arLangData[$__TreeListExplorer__Data.iLang][0], $iListWidth-$iColWidth*2-5) ; filename
 				_GUICtrlListView_AddColumn($hView, $__TreeListExplorer__Data.arLangData[$__TreeListExplorer__Data.iLang][1], $iColWidth, 1) ; size
 				_GUICtrlListView_AddColumn($hView, $__TreeListExplorer__Data.arLangData[$__TreeListExplorer__Data.iLang][2], $iColWidth) ; date created
-			Else
-				If _GUICtrlListView_GetColumnCount($hView)<1 Then
-					_GUICtrlListView_AddColumn($hView, $__TreeListExplorer__Data.arLangData[$__TreeListExplorer__Data.iLang][0], $iListWidth-5) ; filename
-				EndIf
 			EndIf
 		Case $__TreeListExplorer__Type_Input
 			$bShowFolders=False
@@ -447,21 +436,109 @@ Func __TreeListExplorer_AddView($hSystem, $hView, $bShowFolders = Default, $bSho
 	$mView.sFolder = -1
 	$mView.sSelected = -1
 	$mView.iUpdating = 0
+	$mView.iPathIndex = 0
 	$mView.bNavigation = $bNavigation
 	$mView.bListViewFolderUp = $bListViewFolderUp
-	$mView.sCallbackClick = $sCallbackClick
-	$mView.sCallbackDoubleClick = $sCallbackDblClick
-	$mView.sCallbackLoading = $sCallbackLoading
-	$mView.sCallbackFilter = $sCallbackFilter
-	If $sCallbackLVItem<>Default Then
-		$mView.sCallbackListViewItemCreated = $sCallbackLVItem
-	Else
-		$mView.sCallbackListViewItemCreated = "__TreeListExplorer__ListViewItemCreated"
-	EndIf
+	Local $mSorting[]
+	$mSorting.bEnabled = $bEnableSorting
+	$mSorting.iCol = $mView.iPathIndex
+	$mSorting.iDir = 0 ; 0 ASC, 1 DESC
+	$mView.mSorting = $mSorting
+	$mView.sCallbackClick = Default
+	$mView.sCallbackDoubleClick = Default
+	$mView.sCallbackLoading = Default
+	$mView.sCallbackFilter = Default
+	$mView.sCallbackListViewItemCreated = Default
+	$mView.sCallbackListViewPaths = Default
 	$mView.iLineNumber = $iLineNumber
 	$__TreeListExplorer__Data["mViews"][$hView] = $mView
 	$__TreeListExplorer__Data["mSystems"][$iSystem]["mViews"][$hView] = 1
 	__TreeListExplorer__UpdateView($hView)
+	Return True
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: __TreeListExplorer_SetCallback
+; Description ...: Add/Remove a callback to a TLE TreeView/ListView. Allows for click/load handling, filtering, custom columns, sorting,...
+; Syntax ........: __TreeListExplorer_SetCallback($hView, $iCallbackType[, $sCallbackFunction = Default[, $ext1 = Default]])
+; Parameters ....: $hView               - the view where the callback should be added to (must be a TreeView or ListView).
+;                  $iCallbackType       - the type of the callback:
+;											$__TreeListExplorer_Callback_Click = 1
+;											$__TreeListExplorer_Callback_DoubleClick = 2
+;											$__TreeListExplorer_Callback_Loading = 4
+;											$__TreeListExplorer_Callback_Filter = 8
+;											$__TreeListExplorer_Callback_ListViewItemCreated = 16 (ListViews only)
+;                                           $__TreeListExplorer_Callback_ListViewPaths = 32 (ListViews only)
+;                  $sCallbackFunction   - [optional] callback function as string. Using Default will remove an existing callback function.
+;                  $ext1                - [optional] additional parameter depending on $iCallbackType (See remarks for more information)
+; Return values .: True on success
+; Author ........: Kanashius
+; Modified ......:
+; Remarks .......:
+;                  Type $__TreeListExplorer_Callback_Click must be provided with a function with 6 parameters ($hSystem, $hView, $sRoot, $sFolder, $sSelected, $iIndex (ListView)/$hItem (TreeView))
+;                  and is called, when an element in the view is clicked once.
+;
+;                  Type $__TreeListExplorer_Callback_DoubleClick must be provided with a function with 6 parameters ($hSystem, $hView, $sRoot, $sFolder, $sSelected, $iIndex (ListView)/$hItem (TreeView))
+;                  and is called, when an element in the view is double clicked.
+;
+;                  Type $__TreeListExplorer_Callback_Loading must be provided with a function with 7 parameters ($hSystem, $hView, $sRoot, $sFolder, $sSelected, $sLoadingFolder, $bLoading)
+;                  and is called, when a some folders or files are loading (when root/folder changes or an element in a
+;                  TreeView is extended). $bLoading is True if loading starts and False, when it is done. $sLoadingFolder is relative
+;                  to $sRoot and may be different then $sFolder, when the user is expanding a folder manually.
+;
+;                  Type $__TreeListExplorer_Callback_Filter must be provided with a function with 6 parameters ($hSystem, $hView, $bIsFolder, $sPath, $sName, $sExt) and is called to check, if a
+;                  folder/file should be shown in the view. It must return True, if a folder/file should be shown and False, if it should be filtered.
+;                  $bIsFolder is True for folders/drives and False for files. $sPath is the parent folder, the folder/file to be checked is in.
+;                  $sName is the folder/filename without the extension and $sExt is the extension.
+;
+;                  Type $__TreeListExplorer_Callback_ListViewItemCreated must be provided with a function with 6 parameters ($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder) and is called for every ListView item created to enable custom columns.
+;                  $sPath contains the Folder/File path, $iIndex the index of the created listview item and $bFolder is true, if an item for a folder/drive was created and is false for files.
+;
+;                  Type $__TreeListExplorer_Callback_ListViewPaths must be provided with a function with 4 parameters ($hSystem, $hView, $sPath, ByRef $arPaths) and is called every time the ListView items are reloaded.
+;                  The resulting 2D-Array should be returned by the function. Every row in the returned array will create a ListViewItem with the subitems defined in the columns.
+;                  By default, the first col is the folder/filename (with extensions). To change that, the $ext1 Parameter can be provided with the column index, where the filename can be found.
+;                  If the file extensions should be removed, make sure to create an additional column with width 0, where the original filename is saved.
+;
+;                  Errors:
+;                  1 - Parameter is invalid (@extended 1 - $hView, 2 - $iCallbackType, 3 - $sCallbackFunction, 4 - $ext1)
+;                  2 - $hView is not a (valid) control handle
+; Related .......:
+; Link ..........:
+; Example .......: No
+; ===============================================================================================================================
+Func __TreeListExplorer_SetCallback($hView, $iCallbackType, $sCallbackFunction = Default, $ext1 = Default)
+	If Not IsHWnd($hView) Then
+		$hView = GUICtrlGetHandle($hView)
+		If @error Then Return SetError(2, @error, False) ; $hView is not a control
+	EndIf
+	If Not IsHWnd($hView) Or Not MapExists($__TreeListExplorer__Data.mViews, $hView) Then Return SetError(1, 1, False)
+	Local $mView = $__TreeListExplorer__Data.mViews[$hView]
+	If $sCallbackFunction <> Default And Not IsFunc(Execute($sCallbackFunction)) Then Return SetError(1, 3, False)
+	Switch $iCallbackType
+		Case $__TreeListExplorer_Callback_Click
+			$__TreeListExplorer__Data["mViews"][$hView]["sCallbackClick"] = $sCallbackFunction
+		Case $__TreeListExplorer_Callback_DoubleClick
+			$__TreeListExplorer__Data["mViews"][$hView]["sCallbackDoubleClick"] = $sCallbackFunction
+		Case $__TreeListExplorer_Callback_Loading
+			$__TreeListExplorer__Data["mViews"][$hView]["sCallbackLoading"] = $sCallbackFunction
+		Case $__TreeListExplorer_Callback_Filter
+			$__TreeListExplorer__Data["mViews"][$hView]["sCallbackFilter"] = $sCallbackFunction
+			__TreeListExplorer__UpdateView($hView, True)
+		Case $__TreeListExplorer_Callback_ListViewItemCreated
+			$__TreeListExplorer__Data["mViews"][$hView]["sCallbackListViewItemCreated"] = $sCallbackFunction
+			__TreeListExplorer__UpdateView($hView, True)
+		Case $__TreeListExplorer_Callback_ListViewPaths
+			$__TreeListExplorer__Data["mViews"][$hView]["sCallbackListViewPaths"] = $sCallbackFunction
+			If $ext1<>Default Then
+				If Not IsInt($ext1) Then Return SetError(1, 4, False)
+				$__TreeListExplorer__Data["mViews"][$hView]["iPathIndex"] = $ext1
+			Else
+				$__TreeListExplorer__Data["mViews"][$hView]["iPathIndex"] = 0
+			EndIf
+			__TreeListExplorer__UpdateView($hView, True)
+		Case Else
+			Return SetError(1, 2, False)
+	EndSwitch
 	Return True
 EndFunc
 
@@ -875,6 +952,7 @@ EndFunc
 ; Description ...: Update a view to match a TLE systems root folder and current folder
 ; Syntax ........: __TreeListExplorer__UpdateView($hView)
 ; Parameters ....: $hView               - the control handle.
+;                  $bReload             - [optional] Default False. Forces a reload.
 ; Return values .: None
 ; Author ........: Kanashius
 ; Modified ......:
@@ -884,7 +962,7 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer__UpdateView($hView)
+Func __TreeListExplorer__UpdateView($hView, $bReload = False)
 	Local $mView = $__TreeListExplorer__Data.mViews[$hView]
 	Local $mSystem = $__TreeListExplorer__Data.mSystems[$mView.iSystem]
 	Local $iSystem = $mView.iSystem
@@ -894,14 +972,14 @@ Func __TreeListExplorer__UpdateView($hView)
 		Case $__TreeListExplorer__Type_ListView
 			_GUICtrlListView_BeginUpdate($hView)
 	EndSwitch
-	Local $bReload = False
 	; Root different
+	Local $bRootOrFolderChanged = False
 	If $mView.sRoot<>$mSystem.sRoot Then ; HANDLE LATER: $mSystem.bReloadAllFolders Or ($mView.sRoot="" And $mSystem.sFolder="" And $mSystem.bReloadFolder)
 		If $mView.iType<>$__TreeListExplorer__Type_Input Then
 			__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", $mSystem.sRoot, True)
 			If $mSystem.sRoot <> $mSystem.sRootOld Then
 				$__TreeListExplorer__Data["mSystems"][$iSystem]["sRootOld"] = $mSystem.sRoot
-				__TreeListExplorer__HandleSystemCallback($iSystem, "sCallbackFolder")
+				$bRootOrFolderChanged = True
 			EndIf
 			$__TreeListExplorer__Data["mViews"][$hView]["sRoot"] = $mSystem.sRoot
 			Switch $mView.iType
@@ -925,12 +1003,10 @@ Func __TreeListExplorer__UpdateView($hView)
 	; callback folder changed
 	If $mSystem.sFolder <> $mSystem.sFolderOld Then
 		$__TreeListExplorer__Data["mSystems"][$iSystem]["sFolderOld"] = $mSystem.sFolder
-		__TreeListExplorer__HandleSystemCallback($iSystem, "sCallbackFolder")
+		$bRootOrFolderChanged = True
 	EndIf
-	If $mSystem.sSelected <> $mSystem.sSelectedOld Then
-		$__TreeListExplorer__Data["mSystems"][$iSystem]["sSelectedOld"] = $mSystem.sSelected
-		__TreeListExplorer__HandleSystemCallback($iSystem, "sCallbackSelect")
-	EndIf
+	If $bRootOrFolderChanged Then __TreeListExplorer__HandleSystemCallback($iSystem, "sCallbackFolder")
+	__TreeListExplorer__HandleSystemCallback($iSystem, "sCallbackSelect")
 	If $mView.sFolder <> $mSystem.sFolder Or $mView.sSelected<>$mSystem.sSelected Or $mSystem.bReloadFolder Or $bReload Then
 		Local $bFolderChanged = $mView.sFolder <> $mSystem.sFolder
 		Local $bUpdateFolder = $bFolderChanged Or $mSystem.bReloadFolder Or $bReload
@@ -996,69 +1072,97 @@ Func __TreeListExplorer__UpdateView($hView)
 			Case $__TreeListExplorer__Type_ListView
 				If $bUpdateFolder Then
 					__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", $mSystem.sFolder, True)
+					; clear old data
 					$__TreeListExplorer__Data["mViews"][$hView]["iIndex"] = -1
 					__TreeListExplorer__SetViewUpdating($hView, True, $__TreeListExplorer__Status_UpdateView)
 					_GUICtrlListView_DeleteAllItems($hView)
-					; do not display .. folder in root directory
+					; do not display .. folder in root directory,...
 					If $mSystem.sFolder<>"" And $mView.bNavigation And $mView.bListViewFolderUp Then
-						_GUICtrlListView_AddItem($hView, "..", 0)
+						_GUICtrlListView_AddItem($hView, "", 0)
+						_GUICtrlListView_SetItemText($hView, 0, "..", $mView.iPathIndex)
 					EndIf
-					Local $sPath = $mSystem.sRoot & $mSystem.sFolder
-					If $sPath = "" Then ; list drives at root level
+					; collect drives/folders/files
+					Local $sPath = $mSystem.sRoot & $mSystem.sFolder, $bDrive = False, $iFolderCount = 0
+					Local $arPaths[0][3] ; [Filename] => [0][0] = col for filenames
+					If $mView.sCallbackListViewPaths<>Default Then ReDim $arPaths[0][1]
+					If $sPath = "" Then ; drives at root level
 						Local $arDrives = __TreeListExplorer__GetDrives()
-						For $i=0 To UBound($arDrives)-1 Step 1
-							Local $sDrive = StringUpper($arDrives[$i][0])
-							Local $iIndex = _GUICtrlListView_AddItem($hView, $sDrive, $arDrives[$i][1])
-							__TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackListViewItemCreated", $sDrive, $sDrive, $iIndex, True)
+						ReDim $arPaths[UBound($arDrives)][UBound($arPaths, 2)]
+						For $i=0 To UBound($arDrives)-1
+							$arPaths[$i][0] = StringUpper($arDrives[$i][0])
 						Next
-					Else
-						If $mView.bShowFolders Then
-							Local $arFolders = _FileListToArray($sPath, "*", 2)
-							For $i=1 To UBound($arFolders)-1 Step 1
-								If $mView.sCallbackFilter=Default Then
-									Local $iIndex = _GUICtrlListView_AddItem($hView, $arFolders[$i], 0)
-									__TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackListViewItemCreated", $sPath & $arFolders[$i], $arFolders[$i], $iIndex, True)
-								Else
-									; __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", $bIsFolder, $sPath, $sName, $sExt)
-									If __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", True, $sPath, $arFolders[$i], "") Then
-										Local $iIndex = _GUICtrlListView_AddItem($hView, $arFolders[$i], 0)
-										__TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackListViewItemCreated", $sPath & $arFolders[$i], $arFolders[$i], $iIndex, True)
-									EndIf
-								EndIf
-							Next
-						EndIf
-						If $mView.bShowFiles Then
-							Local $arFiles = _FileListToArray($sPath, "*", 1)
-							For $i=1 To UBound($arFiles)-1 Step 1
-								If $mView.sCallbackFilter=Default Then
-									Local $sFilePath = $sPath & $arFiles[$i]
-									Local $iIconIndex = __TreeListExplorer__FileGetIconIndex($sFilePath)
-									Local $iIndex = _GUICtrlListView_AddItem($hView, $arFiles[$i], $iIconIndex)
-									__TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackListViewItemCreated", $sFilePath, $arFiles[$i], $iIndex, False)
-								Else
-									Local $sFilename = $arFiles[$i], $sExt = ""
-									Local $arFileParts = StringRegExp($sFilename, "^(.+?)(\.[^.]{1,5}){0,1}$", 1)
-									If Not @error And UBound($arFileParts)>1 Then
-										$sFilename = $arFileParts[0]
-										$sExt = $arFileParts[1]
-									EndIf
-									If __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", False, $sPath, $sFilename, $sExt) Then
-										Local $sFilePath = $sPath & $arFiles[$i]
-										Local $iIconIndex = __TreeListExplorer__FileGetIconIndex($sFilePath)
-										Local $iIndex = _GUICtrlListView_AddItem($hView, $arFiles[$i], $iIconIndex)
-										__TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackListViewItemCreated", $sFilePath, $arFiles[$i], $iIndex, False)
-									EndIf
-								EndIf
-							Next
-						EndIf
+						$bDrive = True
+						$iFolderCount = UBound($arDrives)
+					Else ; files & folders
+						Local $arFolders[1] = [0], $arFiles[1] = [0]
+						If $mView.bShowFolders Then $arFolders = _FileListToArray($sPath, "*", 2)
+						If $mView.bShowFiles Then $arFiles = _FileListToArray($sPath, "*", 1)
+						ReDim $arPaths[UBound($arFolders) + UBound($arFiles) - (UBound($arFolders)>0?1:0) - (UBound($arFiles)>0?1:0)][UBound($arPaths, 2)]
+						Local $iCount = 0
+						$iFolderCount = UBound($arFolders)-(UBound($arFolders)>0?1:0)
+						For $i=1 To UBound($arFolders)-1
+							$arPaths[$iCount][0] = $arFolders[$i]
+							$iCount+=1
+						Next
+						For $i=1 To UBound($arFiles)-1
+							$arPaths[$iCount][0] = $arFiles[$i]
+							$iCount+=1
+						Next
 					EndIf
+					; enable changes to $arPaths by the user
+					If $mView.sCallbackListViewPaths<>Default Then
+						Local $hSystem = __TreeListExplorer__GetHandleFromSystemID($iSystem)
+						Local $arEditedPaths = Call($mView.sCallbackListViewPaths, $hSystem, $hView, $sPath, $arPaths) ; call manually here to enable ByRef params
+						If @error = 0xDEAD And @extended = 0xBEEF Then
+							__TreeListExplorer__ConsoleWriteCallbackError($mView.sCallbackListViewPaths, "sCallbackListViewPaths", $mSystem.iLineNumber, "__TreeListExplorer_AddView")
+						Else
+							If IsArray($arEditedPaths) And UBound($arEditedPaths, 2)>0 Then $arPaths = $arEditedPaths
+						EndIf
+					Else
+						__TreeListExplorer__ListViewPathHandler($hView, $sPath, $arPaths)
+					EndIf
+					; handle default sorting
+					If $mView.mSorting.bEnabled Then
+						If $mView.sCallbackListViewPaths=Default And $mView.mSorting.iCol<>1 Then _ArraySort($arPaths, $mView.mSorting.iDir, 0, $iFolderCount-1, $mView.mSorting.iCol)
+						_ArraySort($arPaths, $mView.mSorting.iDir, $iFolderCount, 0, $mView.mSorting.iCol)
+					EndIf
+					; compact the bytes to readable strings (for default listviews); after sorting, to enable sorting by int, not string
+					If $mView.sCallbackListViewPaths=Default Then
+						For $i=$iFolderCount to UBound($arPaths)-1
+							$arPaths[$i][1] = __TreeListExplorer__GetSizeString($arPaths[$i][1])
+						Next
+					EndIf
+					; add entries to listview
+					For $i=0 to UBound($arPaths)-1
+						Local $sFile = $arPaths[$i][$mView.iPathIndex]
+						Local $sFilePath = $sPath & $sFile
+						Local $bDriveOrFolder = __TreeListExplorer__PathIsFolder($sFilePath)
+						Local $iIconIndex = __TreeListExplorer__FileGetIconIndex($sFilePath)
+						Local $sFileName = $sFile, $sExt = ""
+						If Not $bDriveOrFolder Then
+							Local $arFileParts = StringRegExp($sFilename, "^(.+?)(\.[^.]{1,5}){0,1}$", 1)
+							If Not @error And UBound($arFileParts)>1 Then
+								$sFilename = $arFileParts[0]
+								$sExt = $arFileParts[1]
+							EndIf
+						EndIf
+						If $mView.sCallbackFilter=Default Or __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackFilter", True, $sPath, $sFilename, $sExt) Then
+							If UBound($arPaths, 2)>0 Then
+								Local $iIndex = _GUICtrlListView_AddItem($hView, $arPaths[$i][0], $iIconIndex)
+								For $j=1 To UBound($arPaths, 2)-1
+									_GUICtrlListView_SetItemText($hView, $iIndex, $arPaths[$i][$j], $j)
+								Next
+							EndIf
+							If $mView.sCallbackListViewItemCreated<>Default Then __TreeListExplorer__HandleCallback($iSystem, $hView, "sCallbackListViewItemCreated", $sFilePath, $sFile, $iIndex, $bDriveOrFolder)
+						EndIf
+					Next
 					__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_UpdateView)
 					__TreeListExplorer__HandleViewCallback($hView, "sCallbackLoading", $mSystem.sFolder, False)
 				EndIf
 				If $mSystem.sSelected<>"" Then
 					Local $sSelected = $mSystem.sSelected
 					For $i=0 To _GUICtrlListView_GetItemCount($hView)
-						If _GUICtrlListView_GetItemText($hView, $i, 0)=$sSelected Then
+						If _GUICtrlListView_GetItemText($hView, $i, $mView.iPathIndex)=$sSelected Then
 							_GUICtrlListView_EnsureVisible($hView, $i)
 							Local $arSel = _GUICtrlListView_GetSelectedIndices($hView, True)
 							For $j=1 To UBound($arSel)-1 Step 1
@@ -1083,17 +1187,13 @@ Func __TreeListExplorer__UpdateView($hView)
 	EndSwitch
 EndFunc
 
-
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
-; Name ..........: __TreeListExplorer__ListViewItemCreated
-; Description ...: Add the default columns for the created listview item
-; Syntax ........: __TreeListExplorer__ListViewItemCreated($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder)
-; Parameters ....: $hSystem             - the handle to the system
-;                  $hView               - the handle to the listview.
+; Name ..........: __TreeListExplorer__ListViewPathHandler
+; Description ...: Default path handler to add the default columns
+; Syntax ........: __TreeListExplorer__ListViewPathHandler($hView, $sPath, $sFilename, $iIndex, $bFolder)
+; Parameters ....: $hView               - the handle to the listview.
 ;                  $sPath               - the path to the file/folder
-;                  $sFilename           - the file/folder name
-;                  $iIndex              - the item index
-;                  $bFolder             - true for folders, false for files
+;                  $arPaths             - the array with files/folders
 ; Return values .:
 ; Author ........: Kanashius
 ; Modified ......:
@@ -1102,13 +1202,13 @@ EndFunc
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func __TreeListExplorer__ListViewItemCreated($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder)
-	If $bFolder Then
-		_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString($sPath), 2)
-	Else
-		_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetSizeString(FileGetSize($sPath)), 1)
-		_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString($sPath), 2)
-	EndIf
+Func __TreeListExplorer__ListViewPathHandler($hView, $sPath, ByRef $arPaths)
+	For $i=0 to UBound($arPaths)-1
+		Local $sFilePath = $sPath & $arPaths[$i][0]
+		$arPaths[$i][2] = __TreeListExplorer__GetTimeString($sFilePath)
+		If Not __TreeListExplorer__PathIsFolder($sFilePath) Then $arPaths[$i][1] = FileGetSize($sFilePath)
+	Next
+	Return $arPaths
 EndFunc
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
@@ -1173,7 +1273,14 @@ EndFunc
 ; Example .......: No
 ; ===============================================================================================================================
 Func __TreeListExplorer__FileGetIconIndex($sPath)
+	; test for drive
+	Local $arRegExpDrive = StringRegExp($sPath, "^([^\/]+?:)\/*$", 1)
+	If UBound($arRegExpDrive)>0 Then return __TreeListExplorer__GetDriveIconId($arRegExpDrive[0])
+
+	; test for folder
 	If __TreeListExplorer__PathIsFolder($sPath) Then Return 0 ; Default folder icon
+
+	; extract and handle cached extensions
 	Local $arExt = StringRegExp($sPath, "^.*[^\\](\.[^\\]*?)$", 1)
 	If @error Or UBound($arExt)<>1 Then Return 2 ; Default file icon
 	Local $sExt = StringLower($arExt[0])
@@ -1578,6 +1685,37 @@ Func __TreeListExplorer__GetDrives()
 	Return $arResult
 EndFunc
 
+
+; #INTERNAL_USE_ONLY# ===========================================================================================================
+; Name ..........: __TreeListExplorer__GetDriveIconId
+; Description ...: Get the icon for a drive.
+; Syntax ........: __TreeListExplorer__GetDriveIconId($sDrive)
+; Parameters ....:
+; Return values .: Id of the icon (or 0 if not matched)
+; Author ........: Kanashius
+; Modified ......:
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: No
+; ===============================================================================================================================
+Func __TreeListExplorer__GetDriveIconId($sDrive)
+	Switch DriveGetType($sDrive)
+		Case 'Fixed'
+			return 5
+		Case 'CDROM'
+			return 6
+		Case 'RAMDisk'
+			return 7
+		Case 'Removable'
+			return 4
+			If StringLeft($sDrive, 2) = "A:" Or StringLeft($sDrive, 2) = "B:" Then return 3
+		Case Else
+			return 8
+	EndSwitch
+	return 0
+EndFunc
+
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
 ; Name ..........: __TreeListExplorer__UpdateTreeViewSelection
 ; Description ...: Handle the selection of a TreeView item (extending/collapsing the item)
@@ -1799,8 +1937,8 @@ Func __TreeListExplorer__KeyProc($nCode, $wParam, $lParam)
 									__TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
 								Case 65
 									If $__TreeListExplorer__Data.bCTRL_DOWN Then
-										For $i=0 to _GUICtrlListView_GetItemCount($hView)
-											_GUICtrlListView_SetItemSelected($hView, $i, True)
+										For $j=0 to _GUICtrlListView_GetItemCount($hView)
+											_GUICtrlListView_SetItemSelected($hView, $j, True)
 										Next
 									EndIf
 							EndSwitch
@@ -1828,6 +1966,7 @@ EndFunc
 ; Example .......: No
 ; ===============================================================================================================================
 Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
+	Local Static $bWasMarqueeStarted = False
     If $iMsg=$WM_NOTIFY Then
 		Local $hView, $iCode, $tNMHDR
 		$tNMHDR = DllStructCreate($tagNMHDR, $ilParam)
@@ -1909,28 +2048,54 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 							EndIf
 							If $bKeyPressed And $iIndex=-1 And _GUICtrlListView_GetItemCount($hView)>0 Then
 								$iIndex = 0
-								If _GUICtrlListView_GetItemCount($hView)>1 And _GUICtrlListView_GetItemText($hView, 0)=".." Then $iIndex = 1
+								If _GUICtrlListView_GetItemCount($hView)>1 And _GUICtrlListView_GetItemText($hView, 0, $mView.iPathIndex)=".." Then $iIndex = 1
 							EndIf
 							If $iCode=$NM_CLICK Or $bKeyPressed Then
-								If $iIndex<>-1 And Not ($iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, 0)="..") Then
+								If $iIndex<>-1 And Not ($iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, $mView.iPathIndex)="..") Then
 									If NOT $__TreeListExplorer__Data.bCTRL_DOWN Then ; do not open/select when CTRL+CLICK multiselecting
-										Local $arPath = __TreeListExplorer__GetPathAndLast(__TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0))
+										Local $arPath = __TreeListExplorer__GetPathAndLast(__TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, $mView.iPathIndex))
 										Local $mOpenPathData[]
 										$mOpenPathData.sFolder = $arPath[0]
 										$mOpenPathData.sSelect = $arPath[1]
 										$mOpenPathData.iSystem = $iSystem
+										$mOpenPathData.iIndex = $iIndex
+										$mOpenPathData.hView = $hView
+										$mOpenPathData.bWasClick = ($iCode=$NM_CLICK) And Not $bWasMarqueeStarted
+										$mOpenPathData.bMarquee = $bWasMarqueeStarted
 										$__TreeListExplorer__Data["mOpenPathViews"][$hView] = $mOpenPathData
 										__TreeListExplorer__SetViewUpdating($hView, True, $__TreeListExplorer__Status_WaitOpenPath)
 										AdlibRegister("__TreeListExplorer__RegisteredOpenPath", $__TreeListExplorer__Data.iDoubleClickTime)
-										If $iCode=$NM_CLICK Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", $iIndex)
 									EndIf
 								EndIf
 							EndIf
+							If $bWasMarqueeStarted Then $bWasMarqueeStarted = False
 						Case $NM_DBLCLK
 							__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_WaitOpenPath)
 							__TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
 							Local $iIndex = _GUICtrlListView_GetSelectionMark($hView)
 							If $iIndex<>-1 Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackDoubleClick", $iIndex)
+						Case $LVN_COLUMNCLICK
+							If $mView.mSorting.bEnabled Then
+								Local $tNMListView = DllStructCreate($tagNMLISTVIEW, $ilParam)
+								Local $iCol = DllStructGetData($tNMListView, "SubItem")
+								Local $hHeader = _GUICtrlListView_GetHeader($hView)
+								For $i = 0 To _GUICtrlHeader_GetItemCount($hHeader) - 1
+									If $i=$iCol Then ContinueLoop
+									_GUICtrlHeader_SetItemFormat($hHeader, $i, BitAND(_GUICtrlHeader_GetItemFormat($hHeader, $i), BitNOT(BitOR($HDF_SORTDOWN, $HDF_SORTUP))))
+								Next
+								$iFormat = _GUICtrlHeader_GetItemFormat($hHeader, $iCol)
+								$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iCol"] = $iCol
+								If BitAND($iFormat, $HDF_SORTUP) Then ; ascending
+									_GUICtrlHeader_SetItemFormat($hHeader, $iCol, BitOR(BitXOR($iFormat, $HDF_SORTUP), $HDF_SORTDOWN))
+									$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iDir"] = 0
+								Else ; descending
+									_GUICtrlHeader_SetItemFormat($hHeader, $iCol, BitOR(BitXOR($iFormat, $HDF_SORTDOWN), $HDF_SORTUP))
+									$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iDir"] = 1
+								EndIf
+								__TreeListExplorer__UpdateView($hView, True)
+							EndIf
+						Case $LVN_MARQUEEBEGIN
+							$bWasMarqueeStarted = True
 					EndSwitch
 			EndSwitch
 			ExitLoop
@@ -1959,8 +2124,15 @@ Func __TreeListExplorer__RegisteredOpenPath()
 	For $i=0 to UBound($arViews)-1 Step 1
 		If __TreeListExplorer__IsViewUpdating($arViews[$i], $__TreeListExplorer__Status_WaitOpenPath) Then
 			Local $mOpenPathData = $__TreeListExplorer__Data["mOpenPathViews"][$arViews[$i]]
+			Local $hView = $mOpenPathData.hView
+			Local $arSel[0]
+			If $mOpenPathData.bMarquee Then $arSel = _GUICtrlListView_GetSelectedIndices(HWnd($hView), True)
 			__TreeListExplorer__OpenPath($mOpenPathData.iSystem, $mOpenPathData.sFolder, $mOpenPathData.sSelect)
-			__TreeListExplorer__SetViewUpdating($arViews[$i], False, $__TreeListExplorer__Status_WaitOpenPath)
+			__TreeListExplorer__SetViewUpdating($hView, False, $__TreeListExplorer__Status_WaitOpenPath)
+			If $mOpenPathData.bWasClick Then __TreeListExplorer__HandleViewCallback($hView, "sCallbackClick", $mOpenPathData.iIndex)
+			For $j=1 To UBound($arSel)-1
+				_GUICtrlListView_SetItemSelected($hView, $arSel[$j], True)
+			Next
 		EndIf
 		MapRemove($__TreeListExplorer__Data.mOpenPathViews, $arViews[$i])
 	Next
@@ -1984,12 +2156,12 @@ Func __TreeListExplorer__ListViewOpenCurrentItem($iSystem, $hView)
 	Local $mView = $__TreeListExplorer__Data.mViews[$hView]
 	If $mView.bNavigation Then
 		Local $iIndex = _GUICtrlListView_GetSelectionMark($hView)
-		If $iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, 0) = ".." Then
+		If $iIndex=0 And _GUICtrlListView_GetItemText($hView, $iIndex, $mView.iPathIndex) = ".." Then
 			Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem)
 			Local $arPath = __TreeListExplorer__GetPathAndLast($sPath)
 			__TreeListExplorer__OpenPath($iSystem, $arPath[0])
 		ElseIf $iIndex<>-1 Then
-			Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, 0)
+			Local $sPath = __TreeListExplorer__GetCurrentPath($iSystem) & _GUICtrlListView_GetItemText($hView, $iIndex, $mView.iPathIndex)
 			__TreeListExplorer__OpenPath($iSystem, $sPath)
 		EndIf
 	EndIf
@@ -2073,6 +2245,13 @@ Func __TreeListExplorer__HandleSystemCallback($iSystem, $sCallbackName, $param1=
 			$arParams[5] = $arPath[1]
 			$iNumParams -= 1
 			$iParamStart = 2
+		EndIf
+		If $sCallbackName="sCallbackSelect" Then
+			If $mSystem.sSelected <> $mSystem.sSelectedOld Then
+				$__TreeListExplorer__Data["mSystems"][$iSystem]["sSelectedOld"] = $mSystem.sSelected
+			Else
+				return 0
+			EndIf
 		EndIf
 		Local $iIndexStart = UBound($arParams)
 		ReDim $arParams[UBound($arParams)+$iNumParams]

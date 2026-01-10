@@ -1,6 +1,14 @@
+#cs ----------------------------------------------------------------------------
+
+	 AutoIt Version: 3.3.18.0
+	 Author:         Kanashius
+
+	 Script Function:
+		Example Script for the TreeListExplorer UDF showcasing most usages.
+
+#ce ----------------------------------------------------------------------------
 ; #AutoIt3Wrapper_UseX64=Y
 #include "TreeListExplorer.au3"
-#include <GuiTreeView.au3>
 
 Global $iWidth = 1600, $iHeight = 1000, $iSpace = 5
 
@@ -18,9 +26,11 @@ Local $idInputPathRight = GUICtrlCreateInput("", $iLeft, $iTop-$iSpace-20, $iCtr
 ; _GUICtrlEdit_SetReadOnly($idInputPathRight, True) ; If the Input should be readonly
 Local $idTreeViewLeft = GUICtrlCreateTreeView($iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
 $iTop+=$iCtrlHeight+$iSpace
-Local $idListViewLeft = GUICtrlCreateListView("Filename|Modified", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight)
-_GUICtrlListView_SetColumnWidth($idListViewLeft, 0, _WinAPI_GetWindowWidth(GUICtrlGetHandle($idListViewLeft))-125)
+Local $idListViewLeft = GUICtrlCreateListView("Filename|Modified|Size", $iLeft, $iTop, $iCtrlWidth, $iCtrlHeight, $LVS_SHOWSELALWAYS)
+_GUICtrlListView_SetColumnWidth($idListViewLeft, 0, _WinAPI_GetWindowWidth(GUICtrlGetHandle($idListViewLeft))-225)
 _GUICtrlListView_SetColumnWidth($idListViewLeft, 1, 120)
+_GUICtrlListView_SetColumnWidth($idListViewLeft, 2, 80)
+_GUICtrlListView_JustifyColumn($idListViewLeft, 2, 1)
 ; create right gui
 Local $iLeft = $iSpace*2 + $iCtrlWidth
 Local $iTop = $iSpace
@@ -42,16 +52,26 @@ __TreeListExplorer_AddView($hTLESystemLeft, $idInputPathRight)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idInputPathRight failed: "&@error&":"&@extended&@crlf)
 __TreeListExplorer_AddView($hTLESystemLeft, $idTreeViewLeft)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewLeft failed: "&@error&":"&@extended&@crlf)
-__TreeListExplorer_AddView($hTLESystemLeft, $idListViewLeft, Default, Default, Default, Default, Default, Default, "_handleCustomColumns")
+__TreeListExplorer_AddView($hTLESystemLeft, $idListViewLeft, Default, Default, Default, Default, False)
+__TreeListExplorer_SetCallback($idListViewLeft, $__TreeListExplorer_Callback_ListViewPaths, "_handleListViewData")
+__TreeListExplorer_SetCallback($idListViewLeft, $__TreeListExplorer_Callback_ListViewItemCreated, "_handleListViewItemCreated")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewLeft failed: "&@error&":"&@extended&@crlf)
 
 ; Create TLE system for the right side
 Local $hTLESystemRight = __TreeListExplorer_CreateSystem($hGui, "", "_currentFolderRight", "_selectCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_CreateSystem right failed: "&@error&":"&@extended&@crlf)
 ; Add Views to TLE system: ShowFolders=True, ShowFiles=True
-__TreeListExplorer_AddView($hTLESystemRight, $idTreeViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback")
+__TreeListExplorer_AddView($hTLESystemRight, $idTreeViewRight, True, True)
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idTreeViewRight failed 2: "&@error&":"&@extended&@crlf)
-__TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, "_clickCallback", "_doubleClickCallback", "_loadingCallback", "_filterCallback", Default, False)
+__TreeListExplorer_SetCallback($idTreeViewRight, $__TreeListExplorer_Callback_Click, "_clickCallback")
+__TreeListExplorer_SetCallback($idTreeViewRight, $__TreeListExplorer_Callback_DoubleClick, "_doubleClickCallback")
+__TreeListExplorer_SetCallback($idTreeViewRight, $__TreeListExplorer_Callback_Loading, "_loadingCallback")
+
+__TreeListExplorer_AddView($hTLESystemRight, $idListViewRight, True, True, True, False)
+__TreeListExplorer_SetCallback($idListViewRight, $__TreeListExplorer_Callback_Click, "_clickCallback")
+__TreeListExplorer_SetCallback($idListViewRight, $__TreeListExplorer_Callback_DoubleClick, "_doubleClickCallback")
+__TreeListExplorer_SetCallback($idListViewRight, $__TreeListExplorer_Callback_Loading, "_loadingCallback")
+__TreeListExplorer_SetCallback($idListViewRight, $__TreeListExplorer_Callback_Filter, "_filterCallback")
 If @error Then ConsoleWrite("__TreeListExplorer_AddView $idListViewRight failed: "&@error&":"&@extended&@crlf)
 
 ; Set the root directory for the right side to the users directory
@@ -74,21 +94,29 @@ ConsoleWrite("Right root: "&__TreeListExplorer_GetRoot($hTLESystemRight)&" Right
 ; __TreeListExplorer_RemoveView($idTreeViewRight)
 
 while True
-	Local $iMsg = GUIGetMsg()
-	If $iMsg=-3 Then
-		__TreeListExplorer_Shutdown()
-		Exit
-	EndIf
-	If $iMsg=$idButtonTest Then
-		__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
-		__TreeListExplorer_Reload($hTLESystemLeft, True) ; reload folder in the right system
-	EndIf
+	Switch GUIGetMsg()
+		Case -3
+			__TreeListExplorer_Shutdown()
+			Exit
+		Case $idButtonTest
+			__TreeListExplorer_Reload($hTLESystemRight, True) ; reload all folders in the right system
+			__TreeListExplorer_Reload($hTLESystemLeft, True) ; reload folder in the right system
+	EndSwitch
 WEnd
 
-Func _handleCustomColumns($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder)
-	If StringRight($sFilename, 1)<>":" Then ; do not for drives
-		_GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetTimeString(FileGetTime($sPath, 0)), 1)
-	EndIf
+Func _handleListViewData($hSystem, $hView, $sPath, ByRef $arPaths)
+	ReDim $arPaths[UBound($arPaths)][3] ; resize the array (and return it at the end)
+	For $i=0 To UBound($arPaths)-1
+		Local $sFilePath = $sPath & $arPaths[$i][0]
+		$arPaths[$i][1] = __TreeListExplorer__GetTimeString(FileGetTime($sFilePath, 0)) ; add time modified
+		If Not __TreeListExplorer__PathIsFolder($sFilePath) Then $arPaths[$i][2] = FileGetSize($sFilePath) ; Put size as integer numbers here to enable the default sorting
+	Next
+	; custom sorting could be done here as well, setting the parameter $bEnableSorting to False when adding the ListView. Sorting can then be handled by the user
+	Return $arPaths
+EndFunc
+
+Func _handleListViewItemCreated($hSystem, $hView, $sPath, $sFilename, $iIndex, $bFolder)
+	If Not $bFolder Then _GUICtrlListView_SetItemText($hView, $iIndex, __TreeListExplorer__GetSizeString(_GUICtrlListView_GetItemText($hView, $iIndex, 2)), 2) ; convert size in bytes to the short text form, after sorting
 EndFunc
 
 Func _currentFolderRight($hSystem, $sRoot, $sFolder, $sSelected)

@@ -77,3 +77,8 @@ Version 2.11.0
 - Smaller fixes
 Version 2.11.1
 - Fix $arDoubleClickTime not being a local variable
+Version 2.12
+- Fix bug where the click handling was done before changing the view selection
+- Added ability to change the listview items entirely
+- Added an easy way to enable sorting
+- Implement changes to enable Marquee selection
