@@ -82,3 +82,5 @@ Version 2.12
 - Added ability to change the listview items entirely
 - Added an easy way to enable sorting
 - Implement changes to enable Marquee selection
+Version 2.12.1
+- Fixed cosmetic direction of listview column arrow when sorting to match the explorer

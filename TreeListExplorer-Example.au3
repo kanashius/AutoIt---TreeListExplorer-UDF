@@ -126,7 +126,6 @@ EndFunc
 
 Func _selectCallback($hSystem, $sRoot, $sFolder, $sSelected)
 	GUICtrlSetData($idLabelSelectRight, $sRoot&$sFolder&"["&$sSelected&"]")
-	__TreeListExplorer__FileGetIconIndex($sRoot&$sFolder&$sSelected)
 	; ConsoleWrite("Select "&$hSystem&": "&$sRoot&$sFolder&"["&$sSelected&"]"&@CRLF)
 EndFunc
 

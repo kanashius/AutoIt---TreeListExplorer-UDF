@@ -20,7 +20,7 @@
 ; Description ...: UDF to use a Listview or Treeview as a File/Folder Explorer
 ; Author(s) .....: Kanashius
 ; Special Thanks.: WildByDesign for testing this UDF a lot and helping me to make it better
-; Version .......: 2.12
+; Version .......: 2.12.1
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -2087,10 +2087,10 @@ Func __TreeListExplorer__WinProc($hWnd, $iMsg, $iwParam, $ilParam)
 								$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iCol"] = $iCol
 								If BitAND($iFormat, $HDF_SORTUP) Then ; ascending
 									_GUICtrlHeader_SetItemFormat($hHeader, $iCol, BitOR(BitXOR($iFormat, $HDF_SORTUP), $HDF_SORTDOWN))
-									$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iDir"] = 0
+									$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iDir"] = 1
 								Else ; descending
 									_GUICtrlHeader_SetItemFormat($hHeader, $iCol, BitOR(BitXOR($iFormat, $HDF_SORTDOWN), $HDF_SORTUP))
-									$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iDir"] = 1
+									$__TreeListExplorer__Data["mViews"][$hView]["mSorting"]["iDir"] = 0
 								EndIf
 								__TreeListExplorer__UpdateView($hView, True)
 							EndIf

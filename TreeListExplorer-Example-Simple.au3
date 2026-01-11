@@ -23,7 +23,7 @@ Local $idInput = GUICtrlCreateInput("", $iSpace, $iTop, $iCtrlWidth, $iCtrlHeigh
 $iTop += $iCtrlHeight+$iSpace
 Local $idTreeView = GUICtrlCreateTreeView($iSpace, $iTop, $iCtrlWidth, $iLargeCtrlHeight)
 $iTop += $iLargeCtrlHeight+$iSpace
-Local $idListView = GUICtrlCreateListView("", $iSpace, $iTop, $iCtrlWidth, $iLargeCtrlHeight)
+Local $idListView = GUICtrlCreateListView("", $iSpace, $iTop, $iCtrlWidth, $iLargeCtrlHeight, $LVS_SHOWSELALWAYS)
 $iTop += $iLargeCtrlHeight+$iSpace
 
 ; Create a TreeListExplorer (TLE) system, where multiple controls are connected to
